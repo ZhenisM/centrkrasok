@@ -43,3 +43,19 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+
+# Secrets
+.env
+.env.*
+
+# Android signing
+*.jks
+*.keystore
+key.properties
+
+# VS Code
+.vscode/
+
+# Flutter extra
+.flutter-plugins

@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:centrkrasok/customer/customer.dart';
 
 class AuthService {
 
@@ -14,6 +15,11 @@ class AuthService {
       );
     }
 
+    // Важно: чистим клиентов ДО удаления user_id — CustomerStorage
+    // использует user_id как namespace и не найдёт данные после.
+    await CustomerStorage.clearAll();
+
     await prefs.remove("auth_token");
+    await prefs.remove("user_id");
   }
 }

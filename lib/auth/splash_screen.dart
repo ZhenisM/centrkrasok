@@ -36,12 +36,20 @@ class _SplashScreenState extends State<SplashScreen> {
         final data = json.decode(response.body);
 
         if (data["result"] != null && data["result"]["valid"] == true) {
+          // Сохраняем user_id на случай, если он ещё не был сохранён
+          // (например, у пользователей, залогиненных до этого обновления).
+          final userId = data["result"]["user_id"]?.toString();
+          if (userId != null) {
+            await prefs.setString('user_id', userId);
+          }
+
           Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
           return;
         }
 
         // токен невалидный → удаляем
         await prefs.remove('auth_token');
+        await prefs.remove('user_id');
       }
 
       Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
