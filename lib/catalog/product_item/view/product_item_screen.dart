@@ -7,6 +7,7 @@ import 'package:centrkrasok/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:centrkrasok/common/menu/menu_screen.dart';
 import 'package:centrkrasok/common/animated_search_bar.dart';
 import 'package:centrkrasok/repositories/products/products.dart';
+import 'package:centrkrasok/cart/view/add_to_cart_sheet.dart';
 
 class ProductItemScreen extends StatefulWidget {
   const ProductItemScreen({super.key});
@@ -104,9 +105,7 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: FilledButton.icon(
-                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Корзина скоро будет доступна')),
-                ),
+                onPressed: () => showAddToCartSheet(context, product!),
                 icon: const Icon(Icons.shopping_cart_outlined),
                 label: const Text('В корзину'),
                 style: FilledButton.styleFrom(

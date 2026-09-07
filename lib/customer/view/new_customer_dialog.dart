@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:centrkrasok/bitrix/bitrix_service.dart';
 import 'package:centrkrasok/customer/customer.dart';
+import 'package:centrkrasok/cart/cart_api_service.dart';
+import 'package:centrkrasok/cart/cart_local_store.dart';
+import 'package:centrkrasok/cart/models/cart_model.dart';
 
 Future<bool?> showNewCustomerDialog(BuildContext context) {
   return showModalBottomSheet<bool>(
@@ -29,6 +32,7 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
   final _commentController = TextEditingController();
 
   final _bitrixService  = BitrixService(dio: Dio());
+  final _cartApiService = CartApiService(dio: Dio());
 
   CustomerType _type     = CustomerType.client;
   String       _sourceId = defaultSourceId;
@@ -110,13 +114,23 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
 
   Future<void> _finalizeCustomerSelection(Customer customer) async {
     await CustomerStorage.setActive(customer);
-    // Корзина в centrkrasok пока не реализована (логика мультикорзины
-    // будет переделана отдельно) — просто сохраняем клиента и сразу
-    // переходим в каталог.
-    // final managerId = await CustomerStorage.currentManagerId();
-    // if (managerId != null) {
-    //   await _cartApiService.createCart(managerId: managerId, customer: customer);
-    // }
+
+    final managerId = await CustomerStorage.currentManagerId();
+    if (managerId == null) {
+      throw CartApiException('Не удалось определить менеджера (не авторизован)');
+    }
+    final basketId = await _cartApiService.createCart(managerId: managerId, customer: customer);
+    await CartLocalStore.upsertCart(
+      Cart(
+        id: basketId,
+        title: customer.fullName,
+        status: CartStatus.inProgress,
+        dateCreate: DateTime.now(),
+        clientInfo: customer.toMultibasketsClientInfo(),
+      ),
+      makeCurrent: true,
+    );
+
     if (!mounted) return;
     Navigator.of(context).pop(true);
     Navigator.of(context).pushReplacementNamed('/products-list');

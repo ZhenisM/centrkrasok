@@ -5,6 +5,7 @@ import 'package:html_unescape/html_unescape.dart';
 import 'package:centrkrasok/catalog/favorites/favorites_service.dart';
 import 'package:centrkrasok/catalog/compare/compare_store.dart';
 import 'package:centrkrasok/repositories/products/models/product.dart';
+import 'package:centrkrasok/cart/view/add_to_cart_sheet.dart';
 
 final _unescape = HtmlUnescape();
 
@@ -169,9 +170,7 @@ class _ProductTileState extends State<ProductTile> {
                   child: _IconBtn(
                     svgAsset: 'assets/icons/shopping-cart.svg',
                     color: Colors.black54,
-                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Корзина скоро будет доступна')),
-                    ),
+                    onTap: () => showAddToCartSheet(context, widget.product),
                   ),
                 ),
 

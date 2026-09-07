@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:centrkrasok/bitrix/bitrix_service.dart';
 import 'package:centrkrasok/customer/customer.dart';
+import 'package:centrkrasok/cart/cart_api_service.dart';
+import 'package:centrkrasok/cart/cart_local_store.dart';
+import 'package:centrkrasok/cart/models/cart_model.dart';
 
 enum _SearchEntity { contact, company }
 
@@ -131,6 +134,7 @@ class _ContactSearchView extends StatefulWidget {
 class _ContactSearchViewState extends State<_ContactSearchView> {
   final _phoneCtrl     = TextEditingController();
   final _bitrixService = BitrixService(dio: Dio());
+  final _cartApiService = CartApiService(dio: Dio());
 
   bool _loading = false;
   String? _error;
@@ -170,11 +174,23 @@ class _ContactSearchViewState extends State<_ContactSearchView> {
     );
     try {
       await CustomerStorage.setActive(customer);
-      // Корзина в centrkrasok пока не реализована — сразу в каталог.
-      // final managerId = await CustomerStorage.currentManagerId();
-      // if (managerId != null) {
-      //   await _cartApiService.createCart(managerId: managerId, customer: customer);
-      // }
+
+      final managerId = await CustomerStorage.currentManagerId();
+      if (managerId == null) {
+        throw CartApiException('Не удалось определить менеджера (не авторизован)');
+      }
+      final basketId = await _cartApiService.createCart(managerId: managerId, customer: customer);
+      await CartLocalStore.upsertCart(
+        Cart(
+          id: basketId,
+          title: customer.fullName,
+          status: CartStatus.inProgress,
+          dateCreate: DateTime.now(),
+          clientInfo: customer.toMultibasketsClientInfo(),
+        ),
+        makeCurrent: true,
+      );
+
       if (!mounted) return;
       Navigator.of(context).pop(true);
       Navigator.of(context).pushReplacementNamed('/products-list');
@@ -277,6 +293,7 @@ class _CompanySearchViewState extends State<_CompanySearchView> {
   final _titleCtrl      = TextEditingController();
   final _binCtrl        = TextEditingController();
   final _pronsApi       = PronsApiService(dio: Dio());
+  final _cartApiService = CartApiService(dio: Dio());
 
   bool _loading = false;
   String? _error;
@@ -325,11 +342,23 @@ class _CompanySearchViewState extends State<_CompanySearchView> {
     );
     try {
       await CustomerStorage.setActive(customer);
-      // Корзина в centrkrasok пока не реализована — сразу в каталог.
-      // final managerId = await CustomerStorage.currentManagerId();
-      // if (managerId != null) {
-      //   await _cartApiService.createCart(managerId: managerId, customer: customer);
-      // }
+
+      final managerId = await CustomerStorage.currentManagerId();
+      if (managerId == null) {
+        throw CartApiException('Не удалось определить менеджера (не авторизован)');
+      }
+      final basketId = await _cartApiService.createCart(managerId: managerId, customer: customer);
+      await CartLocalStore.upsertCart(
+        Cart(
+          id: basketId,
+          title: customer.fullName,
+          status: CartStatus.inProgress,
+          dateCreate: DateTime.now(),
+          clientInfo: customer.toMultibasketsClientInfo(),
+        ),
+        makeCurrent: true,
+      );
+
       if (!mounted) return;
       Navigator.of(context).pop(true);
       Navigator.of(context).pushReplacementNamed('/products-list');

@@ -112,7 +112,7 @@ class _MainScreenState extends State<MainScreen> {
         backgroundColor: const Color(0xFF4CAF50),
         elevation: 0,
         title: const Text(
-          'Offline-svet',
+          'Centr-krasok',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
         ),
         centerTitle: true,

@@ -9,9 +9,10 @@ import 'package:centrkrasok/auth/splash_screen.dart';
 import 'package:centrkrasok/catalog/search/search_screen.dart';
 import 'package:centrkrasok/catalog/favorites/favorites_screen.dart';
 import 'package:centrkrasok/catalog/compare/compare_screen.dart';
+import 'package:centrkrasok/cart/view/cart_screen.dart';
 
-// '/cart' и '/checkout' пока намеренно отсутствуют — мультикорзина и
-// оформление заказа будут переделаны отдельно (см. обсуждение).
+// '/checkout' пока намеренно отсутствует — оформление заказа (перевод
+// корзины-заказа BS -> BO) будет отдельной задачей.
 final routes = {
   '/': (context) => SplashScreen(),
   '/home': (context) => MainScreen(),
@@ -23,4 +24,5 @@ final routes = {
   '/search': (context) => const SearchScreen(),
   '/favorites': (context) => const FavoritesScreen(),
   '/compare': (context) => const CompareScreen(),
+  '/cart': (context) => const CartScreen(),
 };

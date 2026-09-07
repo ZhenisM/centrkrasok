@@ -27,12 +27,7 @@ class AppBottomNavBar extends StatelessWidget {
         if (onCartTap != null) {
           onCartTap!();
         } else {
-          // Корзина в centrkrasok пока не реализована — оставляем иконку
-          // на месте визуально (логика мультикорзины будет переделана
-          // отдельно), но переход пока не ведёт никуда.
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Корзина скоро будет доступна')),
-          );
+          Navigator.of(context).pushReplacementNamed('/cart');
         }
     }
   }
