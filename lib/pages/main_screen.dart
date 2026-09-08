@@ -60,6 +60,16 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  void _openCatalog() {
+    // В отличие от "Анкета лида"/"Существующий клиент", сюда идут БЕЗ
+    // выбора клиента — просто посмотреть каталог. Добавление в корзину
+    // там уже само покажет подсказку выбрать клиента, если попытаться
+    // добавить товар без активной корзины (см. add_to_cart_sheet.dart).
+    // Обычный push, а не replace — чтобы можно было вернуться назад и
+    // при желании всё же выбрать клиента.
+    Navigator.of(context).pushNamed('/products-list');
+  }
+
   Future<void> _confirmLogout() async {
     bool? confirm = await showDialog(
       context: context,
@@ -112,7 +122,7 @@ class _MainScreenState extends State<MainScreen> {
         backgroundColor: const Color(0xFF4CAF50),
         elevation: 0,
         title: const Text(
-          'Centr-krasok',
+          'Центр Красок',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
         ),
         centerTitle: true,
@@ -166,6 +176,27 @@ class _MainScreenState extends State<MainScreen> {
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.black87,
                   elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Каталог — без выбора клиента, просто посмотреть/полистать
+            SizedBox(
+              height: 52,
+              child: OutlinedButton.icon(
+                onPressed: _openCatalog,
+                icon: const Icon(Icons.grid_view_outlined),
+                label: const Text(
+                  'Каталог',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.black87,
+                  side: BorderSide(color: Colors.grey.shade300),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),

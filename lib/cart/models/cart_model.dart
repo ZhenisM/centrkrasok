@@ -83,14 +83,30 @@ class CartItem {
   factory CartItem.fromJson(Map<String, dynamic> json) {
     final rawProps = json['PROPS'] as Map<String, dynamic>? ?? {};
     return CartItem(
-      productId: (json['PRODUCT_ID'] as num?)?.toInt() ?? 0,
+      productId: _toInt(json['PRODUCT_ID']) ?? 0,
       name: json['NAME']?.toString() ?? '',
-      quantity: (json['QUANTITY'] as num?)?.toDouble() ?? 0,
-      price: (json['PRICE'] as num?)?.toDouble() ?? 0,
+      quantity: _toDouble(json['QUANTITY']) ?? 0,
+      price: _toDouble(json['PRICE']) ?? 0,
       customPrice: json['CUSTOM_PRICE']?.toString() == 'Y',
       props: rawProps.map((k, v) => MapEntry(k, v?.toString() ?? '')),
     );
   }
+}
+
+/// Сервер (cart_load.php) не всегда отдаёт числовые поля одинаковым типом
+/// (например PRODUCT_ID уходит строкой) — разбираем терпимо к обоим
+/// вариантам вместо жёсткого `as num?`, который однажды уже уронил разбор
+/// ЛЮБОЙ непустой корзины молча (см. историю правок).
+int? _toInt(dynamic v) {
+  if (v == null) return null;
+  if (v is num) return v.toInt();
+  return int.tryParse(v.toString());
+}
+
+double? _toDouble(dynamic v) {
+  if (v == null) return null;
+  if (v is num) return v.toDouble();
+  return double.tryParse(v.toString());
 }
 
 /// Сериализует список товаров в JSON-массив (обычный, не " / "-разделённая

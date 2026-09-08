@@ -87,9 +87,20 @@ class CartApiService {
       }
 
       final result = data['result'] as List<dynamic>? ?? [];
-      return result
-          .map((e) => Cart.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final carts = <Cart>[];
+      for (final e in result) {
+        try {
+          carts.add(Cart.fromJson(e as Map<String, dynamic>));
+        } catch (parseError) {
+          // Один "плохой" заказ (например, неожиданный формат даты или
+          // COMMENTS не в JSON) не должен ронять загрузку ВСЕГО списка —
+          // раньше именно это приводило к тому, что вся синхронизация
+          // падала и приложение молча откатывалось на устаревший
+          // локальный кэш навсегда, включая уже удалённые на сайте корзины.
+          debugPrint('loadCarts: пропускаю заказ, не удалось распарсить: $parseError, данные: $e');
+        }
+      }
+      return carts;
     } on DioException catch (e) {
       debugPrint('loadCarts: ошибка сети: ${e.message}, ответ сервера: ${e.response?.data}');
       throw CartApiException('Не удалось загрузить корзины');
