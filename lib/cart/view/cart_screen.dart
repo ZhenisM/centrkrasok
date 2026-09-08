@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:centrkrasok/bitrix/bitrix_service.dart' show NoInternetException;
 import 'package:centrkrasok/cart/cart_api_service.dart';
 import 'package:centrkrasok/cart/cart_local_store.dart';
@@ -9,6 +10,9 @@ import 'package:centrkrasok/customer/customer_storage.dart';
 import 'package:centrkrasok/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:centrkrasok/repositories/products/local_db.dart';
 import 'package:centrkrasok/repositories/products/models/product.dart';
+import 'package:centrkrasok/repositories/products/products.dart';
+import 'package:centrkrasok/common/animated_search_bar.dart';
+import 'package:centrkrasok/common/menu/menu_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 const _green = Color(0xFF4CAF50);
@@ -30,11 +34,34 @@ class _CartScreenState extends State<CartScreen> {
   String? _error;
   bool _mutating = false; // блокирует повторные тапы во время запроса к серверу
   Map<String, Product> _productsById = {}; // для картинки/имени — из локального каталога, по PRODUCT_ID
+  List<Section>? _sections; // для кнопки меню в шапке — как в каталоге
+  final _productsRepository = ProductsRepository(dio: Dio());
 
   @override
   void initState() {
     super.initState();
     _loadCarts();
+    _loadSections();
+  }
+
+  Future<void> _loadSections() async {
+    try {
+      final sections = await _productsRepository.getSections();
+      if (mounted) setState(() => _sections = sections);
+    } catch (e) {
+      // Меню без разделов просто не откроется по кнопке — не критично для
+      // самого экрана корзины, поэтому без отдельного _error-состояния.
+      debugPrint('CartScreen: не удалось загрузить разделы для меню: $e');
+    }
+  }
+
+  void _menuOpen() {
+    if (_sections == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MenuScreen(sections: _sections!, products: const []),
+      ),
+    );
   }
 
   Future<void> _loadCarts() async {
@@ -495,13 +522,18 @@ class _CartScreenState extends State<CartScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        elevation: 0,
-        leading: const Icon(Icons.menu_outlined),
-        title: const Text('Мультикорзина', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-        actions: const [
-          Padding(padding: EdgeInsets.only(right: 16), child: Icon(Icons.search)),
+        title: const Text('Мультикорзина'),
+        centerTitle: true,
+        actions: [
+          const CatalogSearchBar(),
+          IconButton(
+            icon: SvgPicture.asset(
+              'assets/icons/menu.svg',
+              width: 22, height: 22,
+              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+            ),
+            onPressed: _menuOpen,
+          ),
         ],
       ),
       body: Column(children: [
@@ -760,17 +792,20 @@ class _CartItemTile extends StatelessWidget {
         Row(children: [
           IconButton(
             onPressed: enabled ? onDelete : null,
-            icon: Icon(Icons.delete_outline, color: Colors.grey.shade500),
+            icon: SvgPicture.asset('assets/icons/trash.svg', width: 26, height: 26,
+                colorFilter: ColorFilter.mode(Colors.grey.shade500, BlendMode.srcIn)),
             visualDensity: VisualDensity.compact,
           ),
           IconButton(
             onPressed: enabled ? onEditProps : null,
-            icon: Icon(Icons.list_alt_outlined, color: Colors.grey.shade500),
+            icon: SvgPicture.asset('assets/icons/list.svg', width: 18, height: 18,
+                colorFilter: ColorFilter.mode(Colors.grey.shade500, BlendMode.srcIn)),
             visualDensity: VisualDensity.compact,
           ),
           IconButton(
             onPressed: onTint, // колеровка отложена — просто "скоро"
-            icon: Icon(Icons.palette_outlined, color: Colors.grey.shade400),
+            icon: SvgPicture.asset('assets/icons/color.svg', width: 24, height: 24,
+                colorFilter: ColorFilter.mode(Colors.grey.shade400, BlendMode.srcIn)),
             visualDensity: VisualDensity.compact,
           ),
           const Spacer(),
@@ -902,7 +937,8 @@ class _CartSelectorTile extends StatelessWidget {
         ),
         IconButton(
           onPressed: onDelete,
-          icon: Icon(Icons.delete_outline, color: selected ? Colors.white : Colors.grey.shade500),
+          icon: SvgPicture.asset('assets/icons/trash.svg', width: 20, height: 20,
+              colorFilter: ColorFilter.mode(selected ? Colors.white : Colors.grey.shade500, BlendMode.srcIn)),
           visualDensity: VisualDensity.compact,
         ),
       ]),

@@ -10,7 +10,6 @@ import 'package:centrkrasok/catalog/product_list/widgets/product_tile.dart';
 import 'package:centrkrasok/common/menu/menu_screen.dart';
 import 'package:centrkrasok/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:centrkrasok/catalog/favorites/favorites_screen.dart';
 import 'package:centrkrasok/catalog/compare/compare_screen.dart';
 import 'package:centrkrasok/catalog/widgets/category_thumbnail.dart';
 
@@ -123,7 +122,11 @@ class _CategoryScreenState extends State<CategoryScreen> {
         actions: [
           const CatalogSearchBar(),
           IconButton(
-            icon: const Icon(Icons.menu_outlined),
+            icon: SvgPicture.asset(
+              'assets/icons/menu.svg',
+              width: 22, height: 22,
+              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+            ),
             onPressed: _menuOpen,
           ),
         ],
@@ -182,19 +185,6 @@ class _CategoryScreenState extends State<CategoryScreen> {
                   ),
                 ),
                 const Spacer(),
-                // Избранное
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pushNamed('/favorites'),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    child: SvgPicture.asset(
-                      'assets/icons/heart.svg',
-                      width: 22, height: 22,
-                      colorFilter: const ColorFilter.mode(
-                        Colors.black54, BlendMode.srcIn),
-                    ),
-                  ),
-                ),
                 // Сравнение
                 GestureDetector(
                   onTap: () => Navigator.of(context).pushNamed('/compare'),

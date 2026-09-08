@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:html_unescape/html_unescape.dart';
-import 'package:centrkrasok/catalog/favorites/favorites_service.dart';
 import 'package:centrkrasok/catalog/compare/compare_store.dart';
 import 'package:centrkrasok/repositories/products/models/product.dart';
 import 'package:centrkrasok/cart/view/add_to_cart_sheet.dart';
@@ -18,8 +17,6 @@ class ProductTile extends StatefulWidget {
 }
 
 class _ProductTileState extends State<ProductTile> {
-  bool _isFavorite = false;
-  bool _favoriteLoading = false;
   bool _isCompared = false;
   bool _compareLoading = false;
 
@@ -48,25 +45,14 @@ class _ProductTileState extends State<ProductTile> {
   @override
   void initState() {
     super.initState();
-    _isFavorite = FavoritesState.instance.isFavorite(_productId);
-    FavoritesState.instance.addListener(_onStateChanged);
     _isCompared = CompareState.instance.isCompared(_productId);
     CompareState.instance.addListener(_onCompareChanged);
   }
 
   @override
   void dispose() {
-    FavoritesState.instance.removeListener(_onStateChanged);
     CompareState.instance.removeListener(_onCompareChanged);
     super.dispose();
-  }
-
-  void _onStateChanged() {
-    if (!mounted) return;
-    final isFav = FavoritesState.instance.isFavorite(_productId);
-    if (isFav != _isFavorite) {
-      setState(() => _isFavorite = isFav);
-    }
   }
 
   void _onCompareChanged() {
@@ -80,13 +66,6 @@ class _ProductTileState extends State<ProductTile> {
     setState(() => _compareLoading = true);
     await CompareStore.instance.toggle(widget.product);
     if (mounted) setState(() => _compareLoading = false);
-  }
-
-  Future<void> _toggleFavorite() async {
-    if (_favoriteLoading) return;
-    setState(() => _favoriteLoading = true);
-    await FavoritesService.instance.toggle(_productId);
-    if (mounted) setState(() => _favoriteLoading = false);
   }
 
   @override
@@ -174,27 +153,15 @@ class _ProductTileState extends State<ProductTile> {
                   ),
                 ),
 
-                // Избранное (сердце)
+                // Колеровка (пока не работает — сделаем отдельно)
                 Expanded(
-                  child: _favoriteLoading
-                      ? const SizedBox(
-                          height: 40,
-                          child: Center(
-                            child: SizedBox(
-                              width: 16, height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Color(0xFF4CAF50)),
-                            ),
-                          ),
-                        )
-                      : _IconBtn(
-                          svgAsset: 'assets/icons/heart.svg',
-                          // Зелёный если в избранном, серый если нет
-                          color: _isFavorite
-                              ? const Color(0xFF4CAF50)
-                              : Colors.black54,
-                          onTap: _toggleFavorite,
-                        ),
+                  child: _IconBtn(
+                    svgAsset: 'assets/icons/color.svg',
+                    color: Colors.black54,
+                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Колеровка скоро будет доступна')),
+                    ),
+                  ),
                 ),
 
                 // Сравнение

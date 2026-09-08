@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:dio/dio.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:centrkrasok/repositories/products/models/product.dart';
@@ -88,7 +89,11 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
         actions: [
           const CatalogSearchBar(),
           IconButton(
-            icon: const Icon(Icons.menu_outlined),
+            icon: SvgPicture.asset(
+              'assets/icons/menu.svg',
+              width: 22, height: 22,
+              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+            ),
             onPressed: _menuOpen,
           ),
         ],
