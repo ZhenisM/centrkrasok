@@ -41,6 +41,7 @@ class CartItem {
   final String name;
   final double quantity;
   final double price;
+  final double basePrice; // цена "было" (до скидки купона) — для зачёркнутого показа
   final bool customPrice;
   final Map<String, String> props;
 
@@ -49,15 +50,24 @@ class CartItem {
     this.name = '',
     required this.quantity,
     this.price = 0,
+    double? basePrice,
     this.customPrice = false,
     this.props = const {},
-  });
+  }) : basePrice = basePrice ?? price;
+
+  /// Скидка есть, если "было" заметно больше "сейчас" (с запасом на
+  /// погрешность округления копеек).
+  bool get hasDiscount => basePrice - price > 0.01;
+
+  double get discountPercent =>
+      hasDiscount && basePrice > 0 ? ((basePrice - price) / basePrice) * 100 : 0;
 
   CartItem copyWith({
     int? productId,
     String? name,
     double? quantity,
     double? price,
+    double? basePrice,
     bool? customPrice,
     Map<String, String>? props,
   }) {
@@ -66,6 +76,7 @@ class CartItem {
       name: name ?? this.name,
       quantity: quantity ?? this.quantity,
       price: price ?? this.price,
+      basePrice: basePrice ?? this.basePrice,
       customPrice: customPrice ?? this.customPrice,
       props: props ?? this.props,
     );
@@ -75,18 +86,29 @@ class CartItem {
         'PRODUCT_ID': productId,
         'NAME': name,
         'QUANTITY': quantity,
-        if (customPrice) 'PRICE': price,
-        if (customPrice) 'CUSTOM_PRICE': 'Y',
+        // ВСЕГДА включаем PRICE/CUSTOM_PRICE (а не только когда
+        // customPrice==true) — эта функция используется и для отправки на
+        // сервер (там PRICE применяется только если CUSTOM_PRICE=='Y', так
+        // что 'N' безопасно игнорируется), и для локального кэша
+        // (CartLocalStore) — а в кэше условное исключение PRICE стирало
+        // цену при перечитывании и показывало 0 до первого ручного выбора
+        // корзины в шторке "Лиды". BASE_PRICE по той же причине —
+        // всегда, иначе зачёркнутая цена пропадала бы при перезагрузке.
+        'PRICE': price,
+        'BASE_PRICE': basePrice,
+        'CUSTOM_PRICE': customPrice ? 'Y' : 'N',
         'PROPS': props,
       };
 
   factory CartItem.fromJson(Map<String, dynamic> json) {
     final rawProps = json['PROPS'] as Map<String, dynamic>? ?? {};
+    final price = _toDouble(json['PRICE']) ?? 0;
     return CartItem(
       productId: _toInt(json['PRODUCT_ID']) ?? 0,
       name: json['NAME']?.toString() ?? '',
       quantity: _toDouble(json['QUANTITY']) ?? 0,
-      price: _toDouble(json['PRICE']) ?? 0,
+      price: price,
+      basePrice: _toDouble(json['BASE_PRICE']) ?? price,
       customPrice: json['CUSTOM_PRICE']?.toString() == 'Y',
       props: rawProps.map((k, v) => MapEntry(k, v?.toString() ?? '')),
     );
@@ -125,6 +147,7 @@ class Cart {
   final CartStatus status;
   final DateTime dateCreate;
   final Map<String, dynamic>? clientInfo;
+  final List<String> coupons;
   final List<CartItem> items;
 
   const Cart({
@@ -133,6 +156,7 @@ class Cart {
     required this.status,
     required this.dateCreate,
     this.clientInfo,
+    this.coupons = const [],
     this.items = const [],
   });
 
@@ -147,6 +171,7 @@ class Cart {
     CartStatus? status,
     DateTime? dateCreate,
     Map<String, dynamic>? clientInfo,
+    List<String>? coupons,
     List<CartItem>? items,
   }) {
     return Cart(
@@ -155,18 +180,21 @@ class Cart {
       status: status ?? this.status,
       dateCreate: dateCreate ?? this.dateCreate,
       clientInfo: clientInfo ?? this.clientInfo,
+      coupons: coupons ?? this.coupons,
       items: items ?? this.items,
     );
   }
 
   factory Cart.fromJson(Map<String, dynamic> json) {
     final rawItems = json['productsInfo'] as List<dynamic>? ?? [];
+    final rawCoupons = json['coupons'] as List<dynamic>? ?? [];
     return Cart(
       id: json['id'].toString(),
       title: json['title']?.toString() ?? '',
       status: CartStatus.fromLabel(json['status']?.toString() ?? ''),
       dateCreate: _parseDate(json['dateCreate']?.toString() ?? ''),
       clientInfo: json['clientInfo'] as Map<String, dynamic>?,
+      coupons: rawCoupons.map((e) => e.toString()).toList(),
       items: rawItems
           .map((e) => CartItem.fromJson(e as Map<String, dynamic>))
           .toList(),

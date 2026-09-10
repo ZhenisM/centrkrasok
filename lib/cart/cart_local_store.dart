@@ -18,7 +18,7 @@ class CartLocalStore {
   static Future<Database> _open() async {
     _db ??= await openDatabase(
       join(await getDatabasesPath(), _dbName),
-      version: 1,
+      version: 3,
       onCreate: (db, _) => db.execute('''
         CREATE TABLE $_table (
           id            TEXT PRIMARY KEY,
@@ -27,9 +27,22 @@ class CartLocalStore {
           is_current    INTEGER NOT NULL DEFAULT 0,
           date_create   TEXT NOT NULL,
           client_info   TEXT,
+          coupons_json  TEXT NOT NULL DEFAULT "[]",
           items_json    TEXT NOT NULL DEFAULT "[]"
         )
       '''),
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          // Старая колонка "coupon" (один купон) — версии 3 больше не
+          // читает/пишет её, но ALTER TABLE ... DROP COLUMN в sqlite не
+          // всегда доступен, поэтому просто оставляем как мёртвый столбец.
+          await db.execute('ALTER TABLE $_table ADD COLUMN coupon TEXT');
+        }
+        if (oldVersion < 3) {
+          await db.execute(
+              'ALTER TABLE $_table ADD COLUMN coupons_json TEXT NOT NULL DEFAULT "[]"');
+        }
+      },
     );
     return _db!;
   }
@@ -106,19 +119,28 @@ class CartLocalStore {
         where: 'id = ?', whereArgs: [basketId]);
   }
 
+  /// Обновить список купонов локально (сразу после успешного применения на
+  /// сервере — чтобы не ждать перезагрузки списка корзин).
+  static Future<void> updateCoupons(String basketId, List<String> coupons) async {
+    final db = await _open();
+    await db.update(_table, {'coupons_json': jsonEncode(coupons)},
+        where: 'id = ?', whereArgs: [basketId]);
+  }
+
   static Future<void> removeCart(String basketId) async {
     final db = await _open();
     await db.delete(_table, where: 'id = ?', whereArgs: [basketId]);
   }
 
   static Map<String, dynamic> _toMap(Cart cart) => {
-        'id':          cart.id,
-        'title':       cart.title,
-        'status':      cart.status.label,
-        'is_current':  0,
-        'date_create': cart.dateCreate.toIso8601String(),
-        'client_info': cart.clientInfo != null ? jsonEncode(cart.clientInfo) : null,
-        'items_json':  encodeCartItems(cart.items),
+        'id':           cart.id,
+        'title':        cart.title,
+        'status':       cart.status.label,
+        'is_current':   0,
+        'date_create':  cart.dateCreate.toIso8601String(),
+        'client_info':  cart.clientInfo != null ? jsonEncode(cart.clientInfo) : null,
+        'coupons_json': jsonEncode(cart.coupons),
+        'items_json':   encodeCartItems(cart.items),
       };
 
   static Cart _fromMap(Map<String, dynamic> m) => Cart(
@@ -129,8 +151,18 @@ class CartLocalStore {
         clientInfo: m['client_info'] != null
             ? (jsonDecode(m['client_info'] as String) as Map<String, dynamic>)
             : null,
+        coupons: _decodeCoupons(m['coupons_json'] as String? ?? '[]'),
         items: _decodeItems(m['items_json'] as String? ?? '[]'),
       );
+
+  static List<String> _decodeCoupons(String raw) {
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      return decoded.map((e) => e.toString()).toList();
+    } catch (_) {
+      return [];
+    }
+  }
 
   static List<CartItem> _decodeItems(String raw) {
     try {

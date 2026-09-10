@@ -10,6 +10,11 @@ import 'package:centrkrasok/customer/models/customer_model.dart';
 /// (ProductsRepository, PronsApiService), но своя папка centrkrasok.
 const String _pronsBaseUrl = 'https://prons.kz/ajax/centrkrasok';
 
+/// Маркер "параметр coupons не передан вовсе" — отличаем от [] (снять все
+/// купоны явно). Object() с identical() вместо enum, чтобы не тащить лишний
+/// публичный тип ради одного приватного параметра.
+const Object _unsetCoupons = Object();
+
 /// Сервис интеграции с cart_save.php / cart_load.php — корзина здесь это
 /// Bitrix\Sale\Order (STATUS_ID=BS), НЕ HL-блок Multibaskets (это отличает
 /// centrkrasok от offlinesvet — корзины двух приложений в разных хранилищах
@@ -110,10 +115,16 @@ class CartApiService {
   /// Перезаписывает состав корзины целиком (все товары разом). Сервер
   /// проверяет, что заказ принадлежит этому manager_id и сайту centrkrasok,
   /// и что он ещё в статусе "в работе" — при несовпадении вернёт ошибку.
+  /// [coupons]: не передавайте, чтобы оставить текущие купоны как есть;
+  /// передайте пустой список, чтобы снять все купоны; передайте список
+  /// кодов, чтобы применить/сменить набор купонов сразу (можно несколько —
+  /// общая скидка и купон на конкретный товар не исключают друг друга;
+  /// сервер проверит каждый на существование и активность в Bitrix).
   Future<void> updateCartItems({
     required String basketId,
     required int managerId,
     required List<CartItem> items,
+    Object? coupons = _unsetCoupons,
   }) async {
     await _requireInternet();
 
@@ -125,6 +136,8 @@ class CartApiService {
           'basket_id': basketId,
           'manager_id': managerId.toString(),
           'products_info': encodeCartItems(items),
+          if (!identical(coupons, _unsetCoupons))
+            'coupons': jsonEncode((coupons as List<String>?) ?? []),
         },
         options: Options(contentType: Headers.formUrlEncodedContentType),
       );

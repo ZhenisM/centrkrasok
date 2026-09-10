@@ -5,6 +5,7 @@ import 'package:centrkrasok/bitrix/bitrix_service.dart' show NoInternetException
 import 'package:centrkrasok/cart/cart_api_service.dart';
 import 'package:centrkrasok/cart/cart_local_store.dart';
 import 'package:centrkrasok/cart/models/cart_model.dart';
+import 'package:centrkrasok/cart/models/coupon_catalog.dart';
 import 'package:centrkrasok/cart/models/room_options.dart';
 import 'package:centrkrasok/customer/customer_storage.dart';
 import 'package:centrkrasok/common/bottom_nav/app_bottom_nav_bar.dart';
@@ -175,6 +176,49 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   void _deleteItem(CartItem item) => _changeQuantity(item, 0);
+
+  /// Применяет/снимает купоны. В отличие от _syncItems (товары), каждый
+  /// купон проверяется на сервере через настоящий Bitrix
+  /// DiscountCouponsManager — если код не существует/неактивен, сервер
+  /// вернёт ошибку и купоны локально не поменяются. Можно выбрать
+  /// несколько сразу — общая скидка и купон на конкретный товар не
+  /// исключают друг друга.
+  Future<void> _applyCoupons(List<String> coupons) async {
+    final current = _current;
+    final managerId = _managerId;
+    if (current == null || managerId == null) return;
+
+    setState(() => _mutating = true);
+    try {
+      await _cartApiService.updateCartItems(
+        basketId: current.id,
+        managerId: managerId,
+        items: current.items,
+        coupons: coupons,
+      );
+      await CartLocalStore.updateCoupons(current.id, coupons);
+      final updated = current.copyWith(coupons: coupons);
+      setState(() {
+        _current = updated;
+        _carts = _carts?.map((c) => c.id == current.id ? updated : c).toList();
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(coupons.isNotEmpty
+              ? 'Купоны применены: ${coupons.join(', ')}'
+              : 'Купоны сняты')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e is CartApiException ? e.message : 'Не удалось применить купоны')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _mutating = false);
+    }
+  }
 
   Future<void> _deleteAll() async {
     final confirmed = await showDialog<bool>(
@@ -470,40 +514,74 @@ class _CartScreenState extends State<CartScreen> {
   void _showCouponsSheet() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        String? regular;
-        String? volume;
+        String? selected = _current?.coupons.isNotEmpty == true ? _current!.coupons.first : null;
         return StatefulBuilder(builder: (ctx, setSheetState) {
           return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-              child: SingleChildScrollView(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
+            child: SizedBox(
+              height: MediaQuery.of(ctx).size.height * 0.75,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 20, right: 20, top: 12,
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 12,
+                ),
+                child: Column(children: [
                   const _SheetHandle(),
                   const SizedBox(height: 12),
                   Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                     const Text('Купоны', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                    TextButton(onPressed: () => setSheetState(() { regular = null; volume = null; }), child: const Text('Сбросить')),
+                    TextButton(
+                      onPressed: () => setSheetState(() => selected = null),
+                      child: const Text('Сбросить'),
+                    ),
                   ]),
-                  const SizedBox(height: 12),
-                  const Align(alignment: Alignment.centerLeft, child: Text('Регламентные скидки', style: TextStyle(color: Colors.grey))),
                   const SizedBox(height: 8),
-                  ...['3%', '5%', '7%', '10%'].map((v) => _SelectableRow(
-                        label: v, selected: regular == v,
-                        onTap: () => setSheetState(() => regular = v),
-                      )),
-                  const SizedBox(height: 12),
-                  const Align(alignment: Alignment.centerLeft, child: Text('На объём', style: TextStyle(color: Colors.grey))),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(children: [
+                        for (final entry in couponCatalog)
+                          if (entry is CouponSectionHeader)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 12, bottom: 4),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(entry.title,
+                                    style: const TextStyle(
+                                        fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87)),
+                              ),
+                            )
+                          else if (entry is CouponGroup) ...[
+                            Padding(
+                              padding: const EdgeInsets.only(top: 10, bottom: 6),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(entry.name,
+                                    style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w600)),
+                              ),
+                            ),
+                            for (final code in entry.codes)
+                              _SelectableRow(
+                                label: code,
+                                selected: selected == code,
+                                onTap: () => setSheetState(
+                                    () => selected = (selected == code) ? null : code),
+                              ),
+                          ],
+                      ]),
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  ...['V12%', 'V15%'].map((v) => _SelectableRow(
-                        label: v, selected: volume == v,
-                        onTap: () => setSheetState(() => volume = v),
-                      )),
-                  const SizedBox(height: 16),
-                  _GreenButton(label: 'Применить', onTap: () { Navigator.pop(ctx); _showComingSoon('Купоны'); }),
+                  _GreenButton(
+                    label: 'Применить',
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _applyCoupons(selected == null ? [] : [selected!]);
+                    },
+                  ),
                 ]),
               ),
             ),
@@ -773,8 +851,27 @@ class _CartItemTile extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(_formatPrice(item.price), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              Text('${_formatPrice(item.price)}/шт', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+              Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+                Text(_formatPrice(item.price), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                if (item.hasDiscount) ...[
+                  const SizedBox(width: 6),
+                  Text(_formatPrice(item.basePrice),
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade400,
+                          decoration: TextDecoration.lineThrough)),
+                ],
+              ]),
+              Row(children: [
+                Text('${_formatPrice(item.price)}/шт', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                if (item.hasDiscount) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(color: _green, borderRadius: BorderRadius.circular(4)),
+                    child: Text('-${item.discountPercent.round()}%',
+                        style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ]),
               const SizedBox(height: 4),
               Text(displayName, style: const TextStyle(fontSize: 13)),
               if (tintColor != null) ...[
