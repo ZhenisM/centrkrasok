@@ -3,6 +3,7 @@ import 'package:centrkrasok/auth/auth_service.dart';
 import 'package:centrkrasok/customer/customer.dart';
 import 'package:centrkrasok/customer/view/new_customer_dialog.dart';
 import 'package:centrkrasok/customer/view/search_customer_screen.dart';
+import 'package:centrkrasok/customer/view/bad_lead_dialog.dart';
 import 'package:centrkrasok/repositories/products/catalog_sync_service.dart';
 
 class MainScreen extends StatefulWidget {
@@ -60,14 +61,13 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  void _openCatalog() {
-    // В отличие от "Анкета лида"/"Существующий клиент", сюда идут БЕЗ
-    // выбора клиента — просто посмотреть каталог. Добавление в корзину
-    // там уже само покажет подсказку выбрать клиента, если попытаться
-    // добавить товар без активной корзины (см. add_to_cart_sheet.dart).
-    // Обычный push, а не replace — чтобы можно было вернуться назад и
-    // при желании всё же выбрать клиента.
-    Navigator.of(context).pushNamed('/products-list');
+  Future<void> _openBadLead() async {
+    await showBadLeadDialog(context);
+  }
+
+  void _openProfile() {
+    // Каталог теперь открывается из профиля (как в offlinesvet).
+    Navigator.of(context).pushNamed('/profile');
   }
 
   Future<void> _confirmLogout() async {
@@ -184,14 +184,37 @@ class _MainScreenState extends State<MainScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Каталог — без выбора клиента, просто посмотреть/полистать
+            // Некачественный лид — красная, короткая анкета без сбора
+            // контактных данных (клиент мог отказаться их предоставить).
+            SizedBox(
+              height: 52,
+              child: FilledButton.icon(
+                onPressed: _openBadLead,
+                icon: const Icon(Icons.thumb_down_outlined),
+                label: const Text(
+                  'Некачественный лид',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFE53935),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Профиль — внутри ссылка на каталог
             SizedBox(
               height: 52,
               child: OutlinedButton.icon(
-                onPressed: _openCatalog,
-                icon: const Icon(Icons.grid_view_outlined),
+                onPressed: _openProfile,
+                icon: const Icon(Icons.person_outline),
                 label: const Text(
-                  'Каталог',
+                  'Профиль',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
                 style: OutlinedButton.styleFrom(

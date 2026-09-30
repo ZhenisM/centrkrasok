@@ -65,6 +65,13 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
       }
 
       final contactId = await _bitrixService.createContact(name: name, phone: phone);
+      // Ответственный — менеджер, авторизованный в приложении. user_id
+      // из prons.kz не совпадает с ID в Bitrix24, поэтому ищем по ФИО.
+      final managerName = await CustomerStorage.currentManagerName();
+      final managerId = managerName != null
+          ? await _bitrixService.findUserIdByName(managerName)
+          : null;
+
       final leadId = await _bitrixService.createLead(
         contactId: contactId,
         name: name,
@@ -72,6 +79,7 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
         type: _type,
         comment: _commentController.text.trim(),
         sourceId: _sourceId,
+        managerId: managerId,
       );
 
       final customer = Customer(

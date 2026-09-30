@@ -30,6 +30,14 @@ class CustomerStorage {
     return int.tryParse(raw);
   }
 
+  /// Имя менеджера ("Фамилия Имя") — для поиска его ID в Bitrix24
+  /// (BitrixService.findUserIdByName): user_id из prons.kz и ID в Bitrix24
+  /// — разные нумерации.
+  static Future<String?> currentManagerName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('user_name');
+  }
+
   /// Список всех клиентов, выбранных/созданных текущим менеджером.
   static Future<List<Customer>> loadAll() async {
     final userId = await _currentUserId();

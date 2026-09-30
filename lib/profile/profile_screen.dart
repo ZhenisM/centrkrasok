@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:centrkrasok/auth/auth_service.dart';
 import 'package:centrkrasok/common/bottom_nav/app_bottom_nav_bar.dart';
@@ -85,6 +86,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ]),
           ),
+          const SizedBox(height: 16),
+
+          // Разделы (как в offlinesvet). Пока только каталог — "Мои успехи"
+          // и "Кабинет клиента" для красок ещё не перенесены.
+          Container(
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+            child: _MenuItem(
+              svgAsset: 'assets/icons/shop.svg',
+              label: 'Каталог',
+              onTap: () => Navigator.of(context).pushNamed('/products-list'),
+            ),
+          ),
           const SizedBox(height: 24),
           SizedBox(
             height: 50,
@@ -97,6 +110,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
       bottomNavigationBar: const AppBottomNavBar(currentTab: AppBottomTab.profile),
+    );
+  }
+}
+
+class _MenuItem extends StatelessWidget {
+  const _MenuItem({required this.svgAsset, required this.label, required this.onTap});
+  final String svgAsset;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(children: [
+          SvgPicture.asset(svgAsset, width: 24, height: 24,
+              colorFilter: const ColorFilter.mode(Color(0xFF4CAF50), BlendMode.srcIn)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+          ),
+          Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey.shade400),
+        ]),
+      ),
     );
   }
 }

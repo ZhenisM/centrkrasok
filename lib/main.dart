@@ -3,6 +3,7 @@ import 'package:centrkrasok/router/router.dart';
 import 'package:centrkrasok/theme/theme.dart';
 import 'package:centrkrasok/repositories/products/local_db.dart';
 import 'package:centrkrasok/catalog/compare/compare_store.dart';
+import 'package:centrkrasok/customer/bad_lead_queue.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +16,9 @@ void main() async {
 
   // Примечание: SyncService (фоновая отправка офлайн-очереди корзин/заказов)
   // пока не подключаем — корзины в centrkrasok ещё нет.
+
+  // Некачественные лиды, не доехавшие до Bitrix в прошлый запуск.
+  BadLeadQueue.instance.restore();
 
   runApp(MaterialApp(
     theme: darkTheme,

@@ -14,6 +14,18 @@ enum CustomerType {
     }
   }
 
+  /// ID значения для поля лида UF_CRM_1674045477 "Тип клиента (КРАСКИ)".
+  /// bitrixFieldId выше НЕ меняем: он же уходит как TYPE_ID в HL-блок
+  /// Multibaskets на сайте, и там ждут прежние значения.
+  String get bitrixPaintLeadFieldId {
+    switch (this) {
+      case CustomerType.client:
+        return '35483';
+      case CustomerType.designer:
+        return '35481';
+    }
+  }
+
   /// Отображаемое название (используется и как TYPE при будущей записи в HL-блок Multibaskets)
   String get label {
     switch (this) {
