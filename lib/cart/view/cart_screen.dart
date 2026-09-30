@@ -14,6 +14,7 @@ import 'package:centrkrasok/repositories/products/models/product.dart';
 import 'package:centrkrasok/repositories/products/products.dart';
 import 'package:centrkrasok/common/animated_search_bar.dart';
 import 'package:centrkrasok/common/menu/menu_screen.dart';
+import 'package:centrkrasok/cart/view/tint_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 const _green = Color(0xFF4CAF50);
@@ -159,13 +160,12 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
-  void _changeQuantity(CartItem item, double newQuantity) {
+  void _changeQuantity(int index, double newQuantity) {
     final current = _current;
     if (current == null) return;
 
     final items = List<CartItem>.from(current.items);
-    final index = items.indexWhere((i) => i.productId == item.productId);
-    if (index == -1) return;
+    if (index < 0 || index >= items.length) return;
 
     if (newQuantity <= 0) {
       items.removeAt(index);
@@ -175,7 +175,7 @@ class _CartScreenState extends State<CartScreen> {
     _syncItems(items);
   }
 
-  void _deleteItem(CartItem item) => _changeQuantity(item, 0);
+  void _deleteItem(int index) => _changeQuantity(index, 0);
 
   /// Применяет/снимает купоны. В отличие от _syncItems (товары), каждый
   /// купон проверяется на сервере через настоящий Bitrix
@@ -197,10 +197,21 @@ class _CartScreenState extends State<CartScreen> {
         coupons: coupons,
       );
       await CartLocalStore.updateCoupons(current.id, coupons);
-      final updated = current.copyWith(coupons: coupons);
+
+      // Сервер применяет скидку сразу при сохранении, но реальные PRICE/
+      // BASE_PRICE новых (пересчитанных) товаров мы узнаём только заново
+      // прочитав корзину — просто подставить coupons локально недостаточно,
+      // иначе цены на экране остаются старыми, пока что-то другое (например,
+      // добавление товара) не перечитает корзину с сервера самостоятельно.
+      final freshCarts = await _cartApiService.loadCarts(managerId: managerId);
+      final freshCurrent = freshCarts.firstWhere(
+        (c) => c.id == current.id,
+        orElse: () => current.copyWith(coupons: coupons),
+      );
+      await CartLocalStore.saveAll(freshCarts);
       setState(() {
-        _current = updated;
-        _carts = _carts?.map((c) => c.id == current.id ? updated : c).toList();
+        _current = freshCurrent;
+        _carts = freshCarts;
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -237,7 +248,38 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
-  Future<void> _editProps(CartItem item) async {
+  /// Открывает экран колеровки для позиции по индексу. Если пользователь
+  /// довёл дело до конца ("Добавить в корзину" на экране колеровки),
+  /// заменяет исходную позицию присланным списком новых (по цвету на
+  /// каждую) и сохраняет — так же, как это работает на сайте: старой
+  /// позиции после этого не остаётся, независимо от того, совпадает ли
+  /// суммарное количество новых с исходным.
+  Future<void> _openTintScreen(int index) async {
+    final current = _current;
+    if (current == null || index < 0 || index >= current.items.length) return;
+    final item = current.items[index];
+    final product = _productsById[item.productId.toString()];
+
+    final newItems = await Navigator.of(context).push<List<CartItem>>(
+      MaterialPageRoute(builder: (_) => TintScreen(
+        originalItem: item,
+        displayName: (product?.name.isNotEmpty ?? false) ? product!.name : item.name,
+        imageUrl: product?.image,
+      )),
+    );
+
+    if (newItems != null && newItems.isNotEmpty) {
+      final items = List<CartItem>.from(current.items);
+      items.removeAt(index);
+      items.addAll(newItems);
+      _syncItems(items);
+    }
+  }
+
+  Future<void> _editProps(int index) async {
+    final current = _current;
+    if (current == null || index < 0 || index >= current.items.length) return;
+    final item = current.items[index];
     final squareCtrl = TextEditingController(text: item.props['ROOM_SQUARE'] ?? '');
     final existingRoom = item.props['SELECT_ROOM'];
     String? selectedRoom = (existingRoom != null && existingRoom.isNotEmpty) ? existingRoom : null;
@@ -297,8 +339,7 @@ class _CartScreenState extends State<CartScreen> {
 
     if (saved == true) {
       final items = List<CartItem>.from(_current?.items ?? []);
-      final index = items.indexWhere((i) => i.productId == item.productId);
-      if (index == -1) return;
+      if (index < 0 || index >= items.length) return;
       final newProps = Map<String, String>.from(items[index].props);
       newProps['SELECT_ROOM'] = selectedRoom ?? '';
       newProps['ROOM_SQUARE'] = squareCtrl.text.trim();
@@ -694,11 +735,11 @@ class _CartScreenState extends State<CartScreen> {
                     item: item,
                     product: _productsById[item.productId.toString()],
                     enabled: !_mutating,
-                    onIncrement: () => _changeQuantity(item, item.quantity + 1),
-                    onDecrement: () => _changeQuantity(item, item.quantity - 1),
-                    onDelete: () => _deleteItem(item),
-                    onEditProps: () => _editProps(item),
-                    onTint: () => _showComingSoon('Колеровка'),
+                    onIncrement: () => _changeQuantity(i, item.quantity + 1),
+                    onDecrement: () => _changeQuantity(i, item.quantity - 1),
+                    onDelete: () => _deleteItem(i),
+                    onEditProps: () => _editProps(i),
+                    onTint: () => _openTintScreen(i),
                   );
                 },
               ),
@@ -815,7 +856,9 @@ class _CartItemTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tintColor = item.props['TINT_COLOR']; // пока нигде не пишется — колеровка отложена
+    final tintRgb = item.props['TINT_RGB'];
+    final tintName = item.props['TINT_NAME'];
+    final tintCollection = item.props['TINT_COLLECTION'];
     final displayName = (product?.name.isNotEmpty ?? false) ? product!.name : item.name;
     final image = product?.image;
 
@@ -874,13 +917,34 @@ class _CartItemTile extends StatelessWidget {
               ]),
               const SizedBox(height: 4),
               Text(displayName, style: const TextStyle(fontSize: 13)),
-              if (tintColor != null) ...[
-                const SizedBox(height: 4),
+              if (tintName != null && tintName.isNotEmpty) ...[
+                const SizedBox(height: 6),
                 Row(children: [
-                  Text('Цвет колеровки  ', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
-                  Container(width: 14, height: 14,
-                      decoration: BoxDecoration(color: _parseHexColor(tintColor), shape: BoxShape.circle)),
+                  Text('Колеровка  ', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                  Text(tintName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                 ]),
+                if (tintCollection != null && tintCollection.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(children: [
+                      Text('Палитра колеровки  ', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                      Expanded(
+                        child: Text(tintCollection, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                    ]),
+                  ),
+                if (tintRgb != null && tintRgb.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(children: [
+                      Text('Цвет колеровки  ', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                      Container(width: 14, height: 14, margin: const EdgeInsets.only(right: 6),
+                          decoration: BoxDecoration(color: _parseHexColor(tintRgb), shape: BoxShape.circle,
+                              border: Border.all(color: Colors.grey.shade300))),
+                      Text(tintRgb, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
               ],
             ]),
           ),

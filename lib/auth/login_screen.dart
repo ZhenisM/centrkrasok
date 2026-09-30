@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:dio/dio.dart' as dio_lib;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,6 +17,26 @@ class _LoginScreenState extends State<LoginScreen > {
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
+  bool _obscurePassword = true;
+
+  bool get _canSubmit =>
+      _loginController.text.trim().isNotEmpty && _passwordController.text.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    // Кнопка "Войти" должна включаться/выключаться по мере ввода —
+    // пересобираем экран при любом изменении текста в полях.
+    _loginController.addListener(() => setState(() {}));
+    _passwordController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _loginController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   Future<void> loginUser() async {
     setState(() {
@@ -84,34 +104,97 @@ class _LoginScreenState extends State<LoginScreen > {
     }
   }
 
+  InputDecoration _fieldDecoration({required String hint, Widget? suffixIcon}) {
+    OutlineInputBorder border(Color color, double width) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: color, width: width),
+        );
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(color: Colors.grey.shade400),
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: border(Colors.transparent, 0),
+      enabledBorder: border(Colors.transparent, 0),
+      focusedBorder: border(Colors.black, 1.5),
+      suffixIcon: suffixIcon,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Авторизация")),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: _loginController,
-              decoration: InputDecoration(labelText: "Логин"),
-            ),
-            TextField(
-              controller: _passwordController,
-              decoration: InputDecoration(labelText: "Пароль"),
-              obscureText: true,
-            ),
-            SizedBox(height: 20),
-            if (_errorMessage != null)
-              Text(_errorMessage!, style: TextStyle(color: Colors.red)),
-            SizedBox(height: 20),
-            _isLoading
-                ? CircularProgressIndicator()
-                : ElevatedButton(
-              onPressed: loginUser,
-              child: Text("Войти"),
-            ),
-          ],
+      backgroundColor: const Color(0xFFF3F2F7),
+      appBar: AppBar(
+        title: const Text("Авторизация"),
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              TextField(
+                controller: _loginController,
+                decoration: _fieldDecoration(hint: "Логин"),
+                autocorrect: false,
+                enableSuggestions: false,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.username],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _passwordController,
+                decoration: _fieldDecoration(
+                  hint: "Пароль",
+                  suffixIcon: IconButton(
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                    icon: SvgPicture.asset(
+                      _obscurePassword ? 'assets/icons/eye-crossed.svg' : 'assets/icons/eye.svg',
+                      width: 20, height: 20,
+                      colorFilter: ColorFilter.mode(Colors.grey.shade500, BlendMode.srcIn),
+                    ),
+                  ),
+                ),
+                obscureText: _obscurePassword,
+                autocorrect: false,
+                enableSuggestions: false,
+                textInputAction: TextInputAction.done,
+                autofillHints: const [AutofillHints.password],
+                // "Готово" на клавиатуре = "Войти", если оба поля заполнены.
+                onSubmitted: (_) {
+                  if (_canSubmit && !_isLoading) loginUser();
+                },
+              ),
+              const SizedBox(height: 20),
+              if (_errorMessage != null)
+                Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : ElevatedButton(
+                        onPressed: _canSubmit ? loginUser : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF4CAF50),
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: Colors.grey.shade300,
+                          disabledForegroundColor: Colors.grey.shade500,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Text(
+                          "Войти",
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
