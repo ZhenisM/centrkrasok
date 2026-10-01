@@ -15,6 +15,8 @@ import 'package:centrkrasok/repositories/products/products.dart';
 import 'package:centrkrasok/common/animated_search_bar.dart';
 import 'package:centrkrasok/common/menu/menu_screen.dart';
 import 'package:centrkrasok/cart/view/tint_screen.dart';
+import 'package:centrkrasok/cart/print_api_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 const _green = Color(0xFF4CAF50);
@@ -38,6 +40,8 @@ class _CartScreenState extends State<CartScreen> {
   Map<String, Product> _productsById = {}; // для картинки/имени — из локального каталога, по PRODUCT_ID
   List<Section>? _sections; // для кнопки меню в шапке — как в каталоге
   final _productsRepository = ProductsRepository(dio: Dio());
+  final _printApiService = PrintApiService(dio: Dio());
+  bool _printing = false;
 
   @override
   void initState() {
@@ -473,13 +477,20 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   void _showPrintSheet() {
+    final current = _current;
+    if (current == null || current.items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Корзина пуста — печатать нечего')),
+      );
+      return;
+    }
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        var city = 'Алматы';
+        var city = 'almaty';
         return StatefulBuilder(builder: (ctx, setSheetState) {
           return SafeArea(
             child: Padding(
@@ -492,29 +503,60 @@ class _CartScreenState extends State<CartScreen> {
                 const SizedBox(height: 16),
                 Row(children: [
                   Expanded(child: _CityToggle(
-                    label: 'Алматы', selected: city == 'Алматы',
-                    onTap: () => setSheetState(() => city = 'Алматы'))),
+                    label: 'Алматы', selected: city == 'almaty',
+                    onTap: () => setSheetState(() => city = 'almaty'))),
                   const SizedBox(width: 8),
                   Expanded(child: _CityToggle(
-                    label: 'Астана', selected: city == 'Астана',
-                    onTap: () => setSheetState(() => city = 'Астана'))),
+                    label: 'Астана', selected: city == 'astana',
+                    onTap: () => setSheetState(() => city = 'astana'))),
                 ]),
                 const SizedBox(height: 16),
-                ...['Договор купли-продажи', 'Приложение к договору',
-                    'Согласие на колеровку (каз)', 'Согласие на колеровку (рус)']
-                    .map((label) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: _OutlinedRowButton(
-                            label: label,
-                            onTap: () { Navigator.pop(ctx); _showComingSoon('Печать документов'); },
-                          ),
-                        )),
+                ...PrintDoc.values.map((doc) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _OutlinedRowButton(
+                        label: doc.label,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _openPrintDocument(current.id, doc, city);
+                        },
+                      ),
+                    )),
               ]),
             ),
           );
         });
       },
     );
+  }
+
+  /// Документ формирует сервер (те же тексты и вёрстка, что на сайте) —
+  /// открываем PDF в системном просмотрщике/браузере, оттуда менеджер
+  /// печатает или отправляет клиенту.
+  Future<void> _openPrintDocument(String basketId, PrintDoc doc, String city) async {
+    if (_printing) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _printing = true);
+    messenger.showSnackBar(SnackBar(
+      content: Text('Готовим «${doc.label}»…'),
+      duration: const Duration(seconds: 20),
+    ));
+    try {
+      final url = await _printApiService.getDocumentUrl(basketId: basketId, doc: doc, city: city);
+      final opened = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      messenger.hideCurrentSnackBar();
+      if (!opened) {
+        messenger.showSnackBar(const SnackBar(content: Text('Не удалось открыть PDF на этом устройстве')));
+      }
+    } on PrintApiException catch (e) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      debugPrint('_openPrintDocument: $e');
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(const SnackBar(content: Text('Не удалось открыть документ')));
+    } finally {
+      if (mounted) setState(() => _printing = false);
+    }
   }
 
   void _showDiscountSheet() {
