@@ -101,7 +101,12 @@ class CartItem {
       };
 
   factory CartItem.fromJson(Map<String, dynamic> json) {
-    final rawProps = json['PROPS'] as Map<String, dynamic>? ?? {};
+    // PHP отдаёт пустые свойства как [] (список), а не {} — так у услуги
+    // «Малярные работы для колеровки», у которой свойств нет. Жёсткий
+    // `as Map` падал, и cart_load молча пропускал ВСЮ корзину (см.
+    // loadCarts) — приложение продолжало показывать старый состав.
+    final propsJson = json['PROPS'];
+    final rawProps = propsJson is Map ? Map<String, dynamic>.from(propsJson) : <String, dynamic>{};
     final price = _toDouble(json['PRICE']) ?? 0;
     return CartItem(
       productId: _toInt(json['PRODUCT_ID']) ?? 0,

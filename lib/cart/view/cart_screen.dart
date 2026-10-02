@@ -16,6 +16,9 @@ import 'package:centrkrasok/common/animated_search_bar.dart';
 import 'package:centrkrasok/common/menu/menu_screen.dart';
 import 'package:centrkrasok/cart/view/tint_screen.dart';
 import 'package:centrkrasok/cart/print_api_service.dart';
+import 'package:centrkrasok/cart/tint_basket_service.dart';
+import 'package:centrkrasok/cart/view/tint_request_screen.dart';
+import 'package:centrkrasok/cart/view/tint_list_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -41,6 +44,8 @@ class _CartScreenState extends State<CartScreen> {
   List<Section>? _sections; // для кнопки меню в шапке — как в каталоге
   final _productsRepository = ProductsRepository(dio: Dio());
   final _printApiService = PrintApiService(dio: Dio());
+  final _tintService = TintBasketService(dio: Dio());
+  TintState _tint = const TintState();
   bool _printing = false;
 
   @override
@@ -123,6 +128,229 @@ class _CartScreenState extends State<CartScreen> {
       _productsById = productsById;
       _loading = false;
     });
+    _refreshTint();
+  }
+
+  /// Состояние колеровки текущей корзины (заявка, статус, цены). Онлайн;
+  /// без сети просто остаётся прежним.
+  Future<void> _refreshTint({bool showErrors = false}) async {
+    final current = _current;
+    if (current == null) {
+      setState(() => _tint = const TintState());
+      return;
+    }
+    try {
+      final state = await _tintService.status(current.id);
+      if (mounted && _current?.id == current.id) setState(() => _tint = state);
+    } catch (e) {
+      debugPrint('tint status: $e');
+      if (showErrors && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
+  /// Перечитать корзины с сервера (после изменений, сделанных сервером:
+  /// колеровка добавлена, скидка на колеровку и т.п.).
+  Future<void> _reloadCurrentFromServer() async {
+    final current = _current;
+    final managerId = _managerId;
+    if (current == null || managerId == null) return;
+    final fresh = await _cartApiService.loadCarts(managerId: managerId);
+    await CartLocalStore.saveAll(fresh);
+    final freshCurrent = fresh.firstWhere((c) => c.id == current.id, orElse: () => current);
+    final ids = freshCurrent.items.map((i) => i.productId.toString()).toList();
+    final products = ids.isEmpty ? <Product>[] : await LocalDb.loadProductsByIds(ids);
+    setState(() {
+      _carts = fresh;
+      _current = freshCurrent;
+      _productsById = {..._productsById, for (final p in products) p.id: p};
+    });
+  }
+
+  void _showErrorDialog(String title, String text) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(child: SelectableText(text)),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+      ),
+    );
+  }
+
+  bool _isTintLocked(CartItem item) =>
+      _tint.locksTintedItems &&
+      (item.props['TINT_NAME'] ?? '').isNotEmpty &&
+      (item.props['TINT_PRICE'] ?? '').isEmpty;
+
+  Future<void> _sendToTint() async {
+    final current = _current;
+    if (current == null) return;
+    final pending = current.items
+        .where((i) => (i.props['TINT_NAME'] ?? '').isNotEmpty && (i.props['TINT_PRICE'] ?? '').isEmpty)
+        .length;
+    final messenger = ScaffoldMessenger.of(context);
+    if (_tint.locksTintedItems) {
+      messenger.showSnackBar(SnackBar(content: Text('Корзина уже на колеровке (№${_tint.tint!.id})')));
+      return;
+    }
+    if (pending == 0) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Нет товаров для колеровки — выберите цвет у товара (иконка палитры)')));
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Отправить на колеровку?'),
+        content: Text('Колерованных позиций: $pending. Колеровщик рассчитает цену, '
+            'пока идёт расчёт, эти позиции нельзя изменить.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Отправить')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _mutating = true);
+    try {
+      final state = await _tintService.send(current.id);
+      setState(() => _tint = state);
+      messenger.showSnackBar(SnackBar(content: Text('Отправлено на колеровку. №${state.tint?.id ?? ''}')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) setState(() => _mutating = false);
+    }
+  }
+
+  /// Страница заявки (как ссылка «22402: цены проставлены» на сайте).
+  Future<void> _openTintRequest(int tintId) async {
+    final added = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => TintRequestScreen(tintId: tintId)),
+    );
+    if (added == true) {
+      try { await _reloadCurrentFromServer(); } catch (_) {}
+    }
+    _refreshTint();
+  }
+
+  void _showTintSheet() {
+    final tint = _tint.tint;
+    if (tint == null) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Center(child: _SheetHandle()),
+            const SizedBox(height: 12),
+            Row(children: [
+              Container(width: 12, height: 24,
+                  decoration: BoxDecoration(color: tintStatusColor(tint.statusCode), borderRadius: BorderRadius.circular(3))),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Колеровка №${tint.id} — ${tint.statusName}',
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600))),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await _refreshTint(showErrors: true);
+                  if (mounted) _showTintSheet();
+                },
+              ),
+            ]),
+            if (tint.date.isNotEmpty) Text(tint.date, style: TextStyle(color: Colors.grey.shade600)),
+            if (tint.priceSetter.isNotEmpty) Text('Цены проставил: ${tint.priceSetter}'),
+            const SizedBox(height: 8),
+            if (!tint.canApply && tint.isActive)
+              Text('Цены ещё не проставлены. Колерованные позиции заблокированы до расчёта.',
+                  style: TextStyle(color: Colors.grey.shade700)),
+            ...tint.products.where((p) => p.active && p.tintPrice > 0).map((p) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(children: [
+                    Expanded(child: Text('${p.tintName} × ${p.quantity % 1 == 0 ? p.quantity.toInt() : p.quantity}')),
+                    Text('${_formatPrice(p.tintPrice)} ₸/шт'),
+                  ]),
+                )),
+            if (tint.total > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('Колеровка: ${_formatPrice(tint.total)} ₸',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+            const SizedBox(height: 16),
+            if (tint.canApply)
+              SizedBox(
+                width: double.infinity, height: 50,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFFACD1EC), foregroundColor: Colors.black87),
+                  onPressed: () { Navigator.pop(ctx); _applyTint(); },
+                  child: const Text('Добавить в корзину', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity, height: 50,
+              child: OutlinedButton(
+                onPressed: () { Navigator.pop(ctx); _openTintRequest(tint.id); },
+                child: Text(tint.canApply || tint.inBasket ? 'Открыть колеровку' : 'Открыть и проставить цены'),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openTintList() async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const TintListScreen()),
+    );
+    if (changed == true) {
+      try { await _reloadCurrentFromServer(); } catch (_) {}
+    }
+    _refreshTint();
+  }
+
+  Future<void> _applyTint() async {
+    final current = _current;
+    final tint = _tint.tint;
+    if (current == null || tint == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _mutating = true);
+    try {
+      final state = await _tintService.apply(current.id, tint.id);
+      setState(() => _tint = state);
+      await _reloadCurrentFromServer();
+      messenger.showSnackBar(const SnackBar(content: Text('Колеровка добавлена в корзину')));
+    } catch (e) {
+      if (mounted) _showErrorDialog('Не удалось добавить колеровку', e.toString());
+    } finally {
+      if (mounted) setState(() => _mutating = false);
+    }
+  }
+
+  Future<void> _applyTintDiscount(int percent) async {
+    final current = _current;
+    if (current == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _mutating = true);
+    try {
+      final state = await _tintService.discount(current.id, percent);
+      await _reloadCurrentFromServer();
+      setState(() => _tint = state);
+      messenger.showSnackBar(SnackBar(
+          content: Text(percent > 0 ? 'Скидка на колеровку $percent% применена' : 'Скидка на колеровку снята')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) setState(() => _mutating = false);
+    }
   }
 
   double _totalPrice(Cart cart) => cart.totalPrice;
@@ -167,6 +395,11 @@ class _CartScreenState extends State<CartScreen> {
   void _changeQuantity(int index, double newQuantity) {
     final current = _current;
     if (current == null) return;
+    if (index >= 0 && index < current.items.length && _isTintLocked(current.items[index])) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Позиция на колеровке — изменить можно после расчёта цены')));
+      return;
+    }
 
     final items = List<CartItem>.from(current.items);
     if (index < 0 || index >= items.length) return;
@@ -236,6 +469,11 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _deleteAll() async {
+    if (_tint.locksTintedItems) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Корзина на колеровке — очистить можно после расчёта цены')));
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -393,6 +631,7 @@ class _CartScreenState extends State<CartScreen> {
                             onTap: () async {
                               await CartLocalStore.setCurrent(cart.id);
                               setState(() => _current = cart);
+                              _refreshTint();
                               if (ctx.mounted) Navigator.pop(ctx);
                             },
                             onDelete: () async {
@@ -585,7 +824,10 @@ class _CartScreenState extends State<CartScreen> {
                       onTap: () => setSheetState(() => selected = v),
                     )),
                 const SizedBox(height: 12),
-                _GreenButton(label: 'Применить', onTap: () { Navigator.pop(ctx); _showComingSoon('Скидки на колеровку'); }),
+                _GreenButton(label: 'Применить', onTap: () {
+                  Navigator.pop(ctx);
+                  _applyTintDiscount(selected == null ? 0 : int.parse(selected!.replaceAll('%', '')));
+                }),
               ]),
             ),
           );
@@ -752,7 +994,7 @@ class _CartScreenState extends State<CartScreen> {
         child: Row(children: [
           Expanded(child: _ActionButton(label: 'Распечатать', onTap: _showPrintSheet)),
           const SizedBox(width: 8),
-          Expanded(child: _ActionButton(label: 'На колеровку', onTap: () => _showComingSoon('Колеровка'))),
+          Expanded(child: _ActionButton(label: 'На колеровку', onTap: _sendToTint)),
         ]),
       ),
       const SizedBox(height: 8),
@@ -762,6 +1004,42 @@ class _CartScreenState extends State<CartScreen> {
           Expanded(child: _ActionButton(label: 'Скидки на колер...', onTap: _showDiscountSheet)),
           const SizedBox(width: 8),
           Expanded(child: _ActionButton(label: 'Купоны', onTap: _showCouponsSheet)),
+        ]),
+      ),
+      Padding(
+        padding: const EdgeInsets.only(left: 16),
+        child: Row(children: [
+          // Текущая колеровка корзины — как ссылка «22402: цены проставлены»
+          // на сайте; по нажатию — шторка со статусом и ценами.
+          if (_tint.tint != null && (_tint.tint!.isActive || _tint.tint!.inBasket))
+            Flexible(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: _showTintSheet,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: tintStatusColor(_tint.tint!.statusCode),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    '${_tint.tint!.id}: ${_tint.tint!.statusName}',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _tint.tint!.inBasket ? Colors.black87 : Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          const Spacer(),
+          TextButton.icon(
+            onPressed: _openTintList,
+            icon: const Icon(Icons.format_paint_outlined, size: 18),
+            label: const Text('Мои колеровки'),
+          ),
         ]),
       ),
       const SizedBox(height: 8),
@@ -776,7 +1054,7 @@ class _CartScreenState extends State<CartScreen> {
                   return _CartItemTile(
                     item: item,
                     product: _productsById[item.productId.toString()],
-                    enabled: !_mutating,
+                    enabled: !_mutating && !_isTintLocked(item),
                     onIncrement: () => _changeQuantity(i, item.quantity + 1),
                     onDecrement: () => _changeQuantity(i, item.quantity - 1),
                     onDelete: () => _deleteItem(i),
@@ -1266,3 +1544,4 @@ class _SelectableRow extends StatelessWidget {
     );
   }
 }
+

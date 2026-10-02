@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 
 /// Один найденный цвет — из ответа tint_search.php?action=search.
@@ -63,11 +64,23 @@ class TintApiService {
   static const String _baseUrl = 'https://prons.kz/ajax/centrkrasok';
   static String? _phpSessionId;
 
+  /// Вход для колеровки — по токену приложения (auth_token), а не по
+  /// одному manager_id: сервер больше не авторизует пользователя без
+  /// доказательства входа. POST, чтобы токен не попадал в логи URL.
   Future<void> _login(int managerId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token') ?? '';
+    if (token.isEmpty) {
+      throw TintApiException('Сессия истекла, войдите в приложение заново');
+    }
     try {
-      final response = await dio.get(
+      final response = await dio.post(
         '$_baseUrl/tint_login.php',
-        queryParameters: {'manager_id': managerId.toString()},
+        data: FormData.fromMap({
+          'token': token,
+          'manager_id': managerId.toString(),
+        }),
+        options: Options(validateStatus: (s) => s != null && s < 500),
       );
       final data = _ensureMap(response.data);
       if (data['error'] != null) {
