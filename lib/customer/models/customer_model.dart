@@ -99,6 +99,9 @@ class Customer {
         'ID': companyId,
         'TITLE': name,
         'BIN': bin,
+        // Сайт (App\OCK\Company) хранит БИН под ключом IIN — дублируем,
+        // чтобы корзины приложения читались сайтом так же.
+        'IIN': bin,
       };
     }
     return {

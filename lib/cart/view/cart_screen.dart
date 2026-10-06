@@ -16,6 +16,7 @@ import 'package:centrkrasok/common/animated_search_bar.dart';
 import 'package:centrkrasok/common/menu/menu_screen.dart';
 import 'package:centrkrasok/cart/view/tint_screen.dart';
 import 'package:centrkrasok/cart/print_api_service.dart';
+import 'package:centrkrasok/checkout/checkout_screen.dart';
 import 'package:centrkrasok/cart/tint_basket_service.dart';
 import 'package:centrkrasok/cart/view/tint_request_screen.dart';
 import 'package:centrkrasok/cart/view/tint_list_screen.dart';
@@ -234,6 +235,27 @@ class _CartScreenState extends State<CartScreen> {
       try { await _reloadCurrentFromServer(); } catch (_) {}
     }
     _refreshTint();
+  }
+
+  /// «Продолжить» → оформление заказа. После оформления корзина на сервере
+  /// становится «оформленной» и пропадает из списка — перечитываем корзины.
+  Future<void> _openCheckout() async {
+    final current = _current;
+    if (current == null || current.items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Корзина пуста')));
+      return;
+    }
+    if (_tint.locksTintedItems) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+          'Сначала завершите колеровку №${_tint.tint!.id}: добавьте её в корзину или отмените')));
+      return;
+    }
+    final done = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => CheckoutScreen(basketId: current.id)),
+    );
+    if (done == true && mounted) {
+      await _loadCarts();
+    }
   }
 
   void _showTintSheet() {
@@ -709,11 +731,7 @@ class _CartScreenState extends State<CartScreen> {
     return true;
   }
 
-  void _showComingSoon(String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$feature — скоро будет доступно')),
-    );
-  }
+
 
   void _showPrintSheet() {
     final current = _current;
@@ -950,7 +968,7 @@ class _CartScreenState extends State<CartScreen> {
             _ContinueBar(
               itemsCount: itemsCount,
               totalPrice: _formatPrice(_totalPrice(current!)),
-              onContinue: () => _showComingSoon('Оформление заказа'),
+              onContinue: _openCheckout,
             ),
           const AppBottomNavBar(currentTab: AppBottomTab.cart),
         ],

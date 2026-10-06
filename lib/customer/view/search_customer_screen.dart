@@ -333,7 +333,10 @@ class _CompanySearchViewState extends State<_CompanySearchView> {
       isCompany: true,
       leadId: null,
       name: match.name,
-      lastName: match.fullName, // полное наименование — в lastName для доступа через fullName
+      // Полное наименование — в lastName (fullName = name + lastName). Если
+      // оно совпадает с названием или пустое — не добавляем, иначе название
+      // корзины дублируется.
+      lastName: match.fullName.trim() == match.name.trim() ? '' : match.fullName,
       phone: match.phone,
       email: match.email,
       bin: match.bin,
