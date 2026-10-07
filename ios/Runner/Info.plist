@@ -45,6 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Только стандартный HTTPS — без этого каждую сборку в TestFlight
+	     приходится вручную подтверждать (Export Compliance). -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>Используется для сканирования штрихкода товара</string>
 </dict>
