@@ -224,10 +224,13 @@ class LocalDb {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return [];
 
+    // Каждое слово — подстрокой (название + бренд + артикул в search_text),
+    // все слова должны совпасть — как онлайн-поиск search_products.php.
+    final words = q.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).take(6).toList();
     final rows = await _database.query(
       'products',
-      where: 'search_text LIKE ?',
-      whereArgs: ['%$q%'],
+      where: List.filled(words.length, 'search_text LIKE ?').join(' AND '),
+      whereArgs: words.map((w) => '%$w%').toList(),
       limit: limit,
     );
     return rows.map(_productFromRow).toList();
