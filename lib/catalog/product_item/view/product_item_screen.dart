@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:dio/dio.dart';
@@ -10,6 +11,7 @@ import 'package:centrkrasok/common/animated_search_bar.dart';
 import 'package:centrkrasok/repositories/products/products.dart';
 import 'package:centrkrasok/cart/view/add_to_cart_sheet.dart';
 import 'package:centrkrasok/cart/view/product_tint_sheet.dart';
+import 'package:centrkrasok/catalog/product_list/widgets/product_tile.dart';
 
 class ProductItemScreen extends StatefulWidget {
   const ProductItemScreen({super.key});
@@ -21,7 +23,19 @@ class ProductItemScreen extends StatefulWidget {
 class _ProductItemScreenState extends State<ProductItemScreen> {
   Product? product;
   final _productsRepository = ProductsRepository(dio: Dio());
+  final _dio = Dio();
   List<Section>? _sections;
+
+  // Как на карточке сайта: «Наличие на складах» и связанные товары
+  // («База», «Фасовка», у Kelly-Moore — «Степень блеска»). Онлайн.
+  List<_StoreAmount>? _stores;
+  List<_LinkedGroup> _linked = [];
+  List<_BaseGroup> _bases = [];
+  String _description = '';
+  bool _detailLoading = false;
+  bool _detailFailed = false;
+  String? _loadedFor;
+  String? _openingId;
 
   @override
   void initState() {
@@ -58,8 +72,66 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
       setState(() {
         product = args;
       });
+      if (_loadedFor != args.id) _loadDetail(args.id);
     }
   }
+
+  Future<void> _loadDetail(String productId) async {
+    _loadedFor = productId;
+    setState(() { _detailLoading = true; _detailFailed = false; });
+    try {
+      final r = await _dio.get(
+        'https://prons.kz/ajax/centrkrasok/product_detail.php',
+        queryParameters: {'product_id': productId},
+        options: Options(responseType: ResponseType.plain, receiveTimeout: const Duration(seconds: 20)),
+      );
+      final data = jsonDecode(r.data as String) as Map<String, dynamic>;
+      if (!mounted || _loadedFor != productId) return;
+      setState(() {
+        _stores = ((data['stores'] as List?) ?? [])
+            .map((e) => _StoreAmount(e['title'].toString(), (e['amount'] as num).toDouble()))
+            .toList();
+        _linked = ((data['linked'] as List?) ?? []).map((g) => _LinkedGroup(
+              g['title'].toString(),
+              ((g['items'] as List?) ?? [])
+                  .map((i) => _LinkedItem(i['id'].toString(), i['value'].toString(), i['current'] == true))
+                  .toList(),
+            )).toList();
+        _bases = ((data['bases'] as List?) ?? []).map((b) => _BaseGroup(
+              b['title'].toString(),
+              ((b['ids'] as List?) ?? []).map((e) => e.toString()).toList(),
+            )).toList();
+        _description = (data['description'] ?? '').toString().trim();
+      });
+    } catch (e) {
+      debugPrint('product_detail: $e');
+      if (mounted && _loadedFor == productId) setState(() => _detailFailed = true);
+    } finally {
+      if (mounted && _loadedFor == productId) setState(() => _detailLoading = false);
+    }
+  }
+
+  /// Переход на другую базу / фасовку — открываем карточку того товара.
+  Future<void> _openLinked(_LinkedItem item) async {
+    if (item.current || _openingId != null) return;
+    setState(() => _openingId = item.id);
+    try {
+      final list = await _productsRepository.getProductsByIds([item.id]);
+      if (!mounted) return;
+      if (list.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Не удалось открыть товар — проверьте интернет')));
+        return;
+      }
+      Navigator.of(context).pushReplacementNamed('/products-item', arguments: list.first);
+    } finally {
+      if (mounted) setState(() => _openingId = null);
+    }
+  }
+
+  String _propValue(String code) => (product!.props[code]?.value ?? '').trim();
+
+  String _fmtAmount(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
   String _fmtPrice(double price) {
     final s = price.toStringAsFixed(0).split('');
@@ -179,14 +251,12 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
 
           const SizedBox(height: 20),
 
-          // Основная информация
+          // 1. Свойства — как на сайте: Артикул, Сегмент, Серия, Укрываемость
           _InfoRow(label: 'Артикул', value: product!.article ?? '—'),
-          if (product!.brend != null) _InfoRow(label: 'Бренд', value: product!.brend!),
-          _InfoRow(label: 'ID товара', value: product!.id),
-          _InfoRow(label: 'ID категории', value: product!.sectionId),
+          for (final e in const [['SEGMENT', 'Сегмент'], ['SERIA', 'Серия'], ['UKRYVAEMOST', 'Укрываемость']])
+            if (_propValue(e[0]).isNotEmpty) _InfoRow(label: e[1], value: _propValue(e[0])),
 
-          const SizedBox(height: 20),
-
+          const SizedBox(height: 16),
           // Цена — показываем подтверждённую розничную группу (30 —
           // "Розничная ИСПОЛЬЗОВАТЬ"), а не вообще все типы цен подряд:
           // у части товаров в базе попутно заполнены ещё и партнёрские/
@@ -210,12 +280,98 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
           ],
+
+          // 2. Наличие на складах
+          const SizedBox(height: 16),
+          const Text('Наличие на складах', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          if (_detailLoading && _stores == null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else if (_stores == null)
+            Text(_detailFailed ? 'Не удалось загрузить остатки — проверьте интернет' : '—',
+                style: const TextStyle(color: Colors.grey))
+          else if (_stores!.isEmpty)
+            const Text('Остатков нет, товар только под заказ',
+                style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w500))
+          else
+            ..._stores!.map((st) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(children: [
+                    Expanded(child: Text(st.title, style: const TextStyle(fontSize: 13, color: Colors.black87))),
+                    Text('${_fmtAmount(st.amount)} шт.', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  ]),
+                )),
+
+          // 3. База, 4. Фасовка (и «Степень блеска» у Kelly-Moore)
+          ..._linked.map((g) => Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(g.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 8, children: g.items.map((it) {
+                    final loading = _openingId == it.id;
+                    return InkWell(
+                      onTap: () => _openLinked(it),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: it.current ? const Color(0xFF2E9E46) : const Color(0xFFC8EFCF),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: loading
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : Text(it.value,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: it.current ? Colors.white : const Color(0xFF1B5E20),
+                                  fontWeight: it.current ? FontWeight.w600 : FontWeight.w500,
+                                )),
+                      ),
+                    );
+                  }).toList()),
+                ]),
+              )),
+
+          const SizedBox(height: 20),
+
+          // Товары той же серии по базам (как блоки «BC» / «BW» на сайте)
+          ..._bases.map((b) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _BaseExpansionTile(group: b, repository: _productsRepository),
+              )),
 
           // Свойства товара — развёртывающийся блок
           if (product!.props.isNotEmpty)
             _PropsExpansionTile(props: product!.props),
+
+          // Описание — как вкладка «Описание» на сайте
+          if (_description.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Card(
+              margin: EdgeInsets.zero,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey.shade200),
+              ),
+              child: ExpansionTile(
+                title: const Text('Описание', style: TextStyle(fontWeight: FontWeight.w600)),
+                shape: const Border(),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+                  SelectableText(_description, style: const TextStyle(fontSize: 14, height: 1.45)),
+                ],
+              ),
+            ),
+          ],
 
           const SizedBox(height: 80),
         ],
@@ -386,6 +542,102 @@ class _PropsExpansionTile extends StatelessWidget {
             );
           }),
           const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+class _StoreAmount {
+  final String title;
+  final double amount;
+  _StoreAmount(this.title, this.amount);
+}
+
+class _LinkedItem {
+  final String id;
+  final String value;
+  final bool current;
+  _LinkedItem(this.id, this.value, this.current);
+}
+
+class _LinkedGroup {
+  final String title;
+  final List<_LinkedItem> items;
+  _LinkedGroup(this.title, this.items);
+}
+
+class _BaseGroup {
+  final String title;
+  final List<String> ids;
+  _BaseGroup(this.title, this.ids);
+}
+
+/// Раскрывающийся блок базы («BC», «BW»…) с карточками товаров той же
+/// серии — как на сайте. Товары грузятся при первом раскрытии.
+class _BaseExpansionTile extends StatefulWidget {
+  const _BaseExpansionTile({required this.group, required this.repository});
+  final _BaseGroup group;
+  final ProductsRepository repository;
+
+  @override
+  State<_BaseExpansionTile> createState() => _BaseExpansionTileState();
+}
+
+class _BaseExpansionTileState extends State<_BaseExpansionTile> {
+  List<Product>? _products;
+  bool _loading = false;
+
+  Future<void> _load() async {
+    if (_products != null || _loading) return;
+    setState(() => _loading = true);
+    try {
+      final list = await widget.repository.getProductsByIds(widget.group.ids);
+      if (mounted) setState(() => _products = list);
+    } catch (_) {
+      if (mounted) setState(() => _products = []);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final columns = MediaQuery.of(context).size.width >= 576 ? 3 : 2;
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: ExpansionTile(
+        title: Text(widget.group.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text('${widget.group.ids.length} товаров', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+        shape: const Border(),
+        onExpansionChanged: (open) { if (open) _load(); },
+        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+        children: [
+          if (_loading)
+            const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(strokeWidth: 2))
+          else if (_products != null && _products!.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('Не удалось загрузить товары', style: TextStyle(color: Colors.grey)),
+            )
+          else if (_products != null)
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _products!.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 0.62,
+              ),
+              itemBuilder: (_, i) => ProductTile(product: _products![i]),
+            ),
         ],
       ),
     );

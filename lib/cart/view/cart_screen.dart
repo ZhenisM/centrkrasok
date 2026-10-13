@@ -237,6 +237,26 @@ class _CartScreenState extends State<CartScreen> {
     _refreshTint();
   }
 
+  /// Переход на детальную карточку товара из корзины (по названию или
+  /// картинке). Товар берём из кэша каталога; если его там нет —
+  /// подгружаем по ID.
+  Future<void> _openProduct(CartItem item) async {
+    var product = _productsById[item.productId.toString()];
+    if (product == null) {
+      try {
+        final list = await _productsRepository.getProductsByIds([item.productId.toString()]);
+        if (list.isNotEmpty) product = list.first;
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    if (product == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Карточка товара недоступна — откройте его через каталог')));
+      return;
+    }
+    Navigator.of(context).pushNamed('/products-item', arguments: product);
+  }
+
   /// «Продолжить» → оформление заказа. После оформления корзина на сервере
   /// становится «оформленной» и пропадает из списка — перечитываем корзины.
   Future<void> _openCheckout() async {
@@ -1078,6 +1098,7 @@ class _CartScreenState extends State<CartScreen> {
                     onDelete: () => _deleteItem(i),
                     onEditProps: () => _editProps(i),
                     onTint: () => _openTintScreen(i),
+                    onOpen: () => _openProduct(item),
                   );
                 },
               ),
@@ -1181,6 +1202,7 @@ class _CartItemTile extends StatelessWidget {
     required this.onDelete,
     required this.onEditProps,
     required this.onTint,
+    required this.onOpen,
   });
 
   final CartItem item;
@@ -1191,6 +1213,7 @@ class _CartItemTile extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onEditProps;
   final VoidCallback onTint;
+  final VoidCallback onOpen; // переход на детальную карточку товара
 
   @override
   Widget build(BuildContext context) {
@@ -1209,7 +1232,9 @@ class _CartItemTile extends StatelessWidget {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          ClipRRect(
+          GestureDetector(
+            onTap: onOpen,
+            child: ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: SizedBox(
               width: 56, height: 56,
@@ -1229,14 +1254,17 @@ class _CartItemTile extends StatelessWidget {
                     ),
             ),
           ),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-                Text(_formatPrice(item.price), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                // Итог по позиции = цена за шт × количество (пересчитывается
+                // при «+» / «−»); цена за шт — строкой ниже.
+                Text(_formatPrice(item.price * item.quantity), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 if (item.hasDiscount) ...[
                   const SizedBox(width: 6),
-                  Text(_formatPrice(item.basePrice),
+                  Text(_formatPrice(item.basePrice * item.quantity),
                       style: TextStyle(fontSize: 13, color: Colors.grey.shade400,
                           decoration: TextDecoration.lineThrough)),
                 ],
@@ -1254,7 +1282,11 @@ class _CartItemTile extends StatelessWidget {
                 ],
               ]),
               const SizedBox(height: 4),
-              Text(displayName, style: const TextStyle(fontSize: 13)),
+              GestureDetector(
+                onTap: onOpen,
+                child: Text(displayName, style: const TextStyle(fontSize: 13, decoration: TextDecoration.underline,
+                    decorationColor: Color(0xFFBDBDBD))),
+              ),
               if (tintName != null && tintName.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Row(children: [

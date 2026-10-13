@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:centrkrasok/cart/view/product_tint_sheet.dart';
+import 'package:centrkrasok/catalog/stock/stock_cache.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:html_unescape/html_unescape.dart';
@@ -44,6 +46,7 @@ class _ProductTileState extends State<ProductTile> {
 
   @override
   void initState() {
+    StockCache.request(widget.product.id);
     super.initState();
     _isCompared = CompareState.instance.isCompared(_productId);
     CompareState.instance.addListener(_onCompareChanged);
@@ -137,6 +140,32 @@ class _ProductTileState extends State<ProductTile> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  // Остатки как на карточке сайта: «Остаток Алматы: N шт» …
+                  // или «Только под заказ». Без интернета — не показываем.
+                  ValueListenableBuilder<int>(
+                    valueListenable: StockCache.version,
+                    builder: (context, _, child) {
+                      final st = StockCache.get(widget.product.id);
+                      if (st == null) return const SizedBox.shrink();
+                      const style = TextStyle(fontSize: 10.5, color: Colors.black54, height: 1.3);
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: st.isEmpty
+                            ? const Text('Только под заказ', style: style)
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: st.lines
+                                    .map((e) => Text(
+                                          '${e.key}: ${e.value == e.value.roundToDouble() ? e.value.toInt() : e.value} шт',
+                                          style: style,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ))
+                                    .toList(),
+                              ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -153,14 +182,18 @@ class _ProductTileState extends State<ProductTile> {
                   ),
                 ),
 
-                // Колеровка (пока не работает — сделаем отдельно)
+                // Колеровка — та же шторка, что «Колеровать» на карточке.
+                // Как на сайте: только у товаров с заполненной
+                // «Колеровка обязательна» (color_da); у остальных иконка бледная.
                 Expanded(
                   child: _IconBtn(
                     svgAsset: 'assets/icons/color.svg',
-                    color: Colors.black54,
-                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Колеровка скоро будет доступна')),
-                    ),
+                    color: canTintProduct(widget.product) ? Colors.black54 : Colors.black12,
+                    onTap: () => canTintProduct(widget.product)
+                        ? showProductTintSheet(context, widget.product)
+                        : ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Этот товар не колеруется')),
+                          ),
                   ),
                 ),
 
