@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:centrkrasok/cart/cart_local_store.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:dio/dio.dart' as dio_lib;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -69,6 +70,15 @@ class _LoginScreenState extends State<LoginScreen > {
             String? fullName = data["result"]["full_name"]?.toString();
 
             SharedPreferences prefs = await SharedPreferences.getInstance();
+
+            // Вошёл ДРУГОЙ менеджер — корзины прошлого на телефоне не
+            // нужны (и сервер не даст их менять: «создан другим
+            // менеджером»). Тот же менеджер — ничего не трогаем.
+            final previousUserId = prefs.getString("user_id");
+            if (userId != null && previousUserId != null && previousUserId != userId) {
+              await CartLocalStore.clearAll();
+            }
+
             await prefs.setString("auth_token", token);
             if (userId != null) {
               await prefs.setString("user_id", userId);

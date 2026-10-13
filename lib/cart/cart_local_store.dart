@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:centrkrasok/cart/models/cart_model.dart';
@@ -10,6 +12,25 @@ import 'package:centrkrasok/cart/models/cart_model.dart';
 /// centrkrasok вообще не хранит такого флага (корзина здесь — заказ, а не
 /// строка HL-блока), поэтому is_current никогда никуда не отправляется,
 /// только читается/пишется в этой локальной таблице.
+/// Количество товаров (сумма количеств) в ТЕКУЩЕЙ корзине — для красного
+/// значка на иконке корзины в нижнем меню (как в offlinesvet). Обновляется
+/// при любом изменении корзин в локальной базе.
+class CartBadge {
+  CartBadge._();
+  static final ValueNotifier<int> count = ValueNotifier<int>(0);
+
+  static Future<void> refresh() async {
+    try {
+      final current = await CartLocalStore.loadCurrent();
+      count.value = current == null
+          ? 0
+          : current.items.fold<double>(0, (sum, i) => sum + i.quantity).round();
+    } catch (e) {
+      debugPrint('CartBadge.refresh: $e');
+    }
+  }
+}
+
 class CartLocalStore {
   static const _dbName = 'carts_local_ck.db';
   static const _table  = 'carts';
@@ -75,6 +96,7 @@ class CartLocalStore {
     if (anyCurrent.isEmpty && carts.isNotEmpty) {
       await setCurrent(carts.first.id);
     }
+    unawaited(CartBadge.refresh());
   }
 
   static Future<List<Cart>> loadAll() async {
@@ -97,6 +119,7 @@ class CartLocalStore {
       await txn.update(_table, {'is_current': 0});
       await txn.update(_table, {'is_current': 1}, where: 'id = ?', whereArgs: [basketId]);
     });
+    unawaited(CartBadge.refresh());
   }
 
   /// Добавить/обновить одну корзину локально (например сразу после
@@ -109,6 +132,7 @@ class CartLocalStore {
     final map = _toMap(cart);
     if (makeCurrent) map['is_current'] = 1;
     await db.insert(_table, map, conflictAlgorithm: ConflictAlgorithm.replace);
+    unawaited(CartBadge.refresh());
   }
 
   /// Обновить состав товаров локально (сразу после успешного
@@ -117,6 +141,7 @@ class CartLocalStore {
     final db = await _open();
     await db.update(_table, {'items_json': encodeCartItems(items)},
         where: 'id = ?', whereArgs: [basketId]);
+    unawaited(CartBadge.refresh());
   }
 
   /// Обновить список купонов локально (сразу после успешного применения на
@@ -130,6 +155,17 @@ class CartLocalStore {
   static Future<void> removeCart(String basketId) async {
     final db = await _open();
     await db.delete(_table, where: 'id = ?', whereArgs: [basketId]);
+    unawaited(CartBadge.refresh());
+  }
+
+  /// Удалить все корзины с телефона — при входе ДРУГОГО менеджера
+  /// (корзины в этой базе не разделены по пользователям). Неотправленных
+  /// изменений здесь не бывает: корзины красок меняются сразу на сервере
+  /// (cart_save.php), локальная база — только зеркало.
+  static Future<void> clearAll() async {
+    final db = await _open();
+    await db.delete(_table);
+    unawaited(CartBadge.refresh());
   }
 
   static Map<String, dynamic> _toMap(Cart cart) => {

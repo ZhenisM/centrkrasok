@@ -4,6 +4,7 @@ import 'package:centrkrasok/theme/theme.dart';
 import 'package:centrkrasok/repositories/products/local_db.dart';
 import 'package:centrkrasok/catalog/compare/compare_store.dart';
 import 'package:centrkrasok/customer/bad_lead_queue.dart';
+import 'package:centrkrasok/cart/cart_local_store.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +20,9 @@ void main() async {
 
   // Некачественные лиды, не доехавшие до Bitrix в прошлый запуск.
   BadLeadQueue.instance.restore();
+
+  // Значок количества товаров у корзины в нижнем меню.
+  CartBadge.refresh();
 
   runApp(MaterialApp(
     theme: darkTheme,

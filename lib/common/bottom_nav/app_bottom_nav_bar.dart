@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:centrkrasok/cart/cart_local_store.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 enum AppBottomTab { profile, scanner, mic, catalog, cart }
@@ -90,11 +91,42 @@ class AppBottomNavBar extends StatelessWidget {
                 selected: currentTab == AppBottomTab.catalog,
                 onTap: () => _goToCatalog(context),
               ),
-              // Корзина — без бейджа синхронизации (нет очереди без корзины)
-              _NavIcon(
-                svgAsset: 'assets/icons/shopping-cart.svg',
-                selected: currentTab == AppBottomTab.cart,
-                onTap: () => _goToCart(context),
+              // Корзина + красный значок с количеством товаров текущей корзины.
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _NavIcon(
+                    svgAsset: 'assets/icons/shopping-cart.svg',
+                    selected: currentTab == AppBottomTab.cart,
+                    onTap: () => _goToCart(context),
+                  ),
+                  ValueListenableBuilder<int>(
+                    valueListenable: CartBadge.count,
+                    builder: (context, items, child) => items <= 0
+                        ? const SizedBox.shrink()
+                        : Positioned(
+                            top: 2,
+                            right: 2,
+                            child: IgnorePointer(
+                              child: Container(
+                                constraints: const BoxConstraints(minWidth: 18),
+                                height: 18,
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE53935),
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: Text(
+                                  items > 99 ? '99+' : '$items',
+                                  style: const TextStyle(color: Colors.white, fontSize: 11,
+                                      fontWeight: FontWeight.w700, height: 1.1),
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                ],
               ),
             ],
           ),

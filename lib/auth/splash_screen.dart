@@ -22,8 +22,6 @@ class _SplashScreenState extends State<SplashScreen> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('auth_token');
 
-      debugPrint('TOKEN: $token');
-
       if (!mounted) return;
 
       if (token != null && token.isNotEmpty) {

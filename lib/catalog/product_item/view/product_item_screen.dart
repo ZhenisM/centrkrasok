@@ -9,6 +9,7 @@ import 'package:centrkrasok/common/menu/menu_screen.dart';
 import 'package:centrkrasok/common/animated_search_bar.dart';
 import 'package:centrkrasok/repositories/products/products.dart';
 import 'package:centrkrasok/cart/view/add_to_cart_sheet.dart';
+import 'package:centrkrasok/cart/view/product_tint_sheet.dart';
 
 class ProductItemScreen extends StatefulWidget {
   const ProductItemScreen({super.key});
@@ -109,15 +110,35 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: FilledButton.icon(
-                onPressed: () => showAddToCartSheet(context, product!),
-                icon: const Icon(Icons.shopping_cart_outlined),
-                label: const Text('В корзину'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF4CAF50),
-                  minimumSize: const Size.fromHeight(52),
+              child: Row(children: [
+                // «Колеровать» — как на сайте, только у товаров с color_da.
+                if (product != null && canTintProduct(product!)) ...[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => showProductTintSheet(context, product!),
+                      icon: const Icon(Icons.palette_outlined),
+                      label: const Text('Колеровать'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF4CAF50),
+                        side: const BorderSide(color: Color(0xFF4CAF50), width: 1.5),
+                        minimumSize: const Size.fromHeight(52),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => showAddToCartSheet(context, product!),
+                    icon: const Icon(Icons.shopping_cart_outlined),
+                    label: const Text('В корзину'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF4CAF50),
+                      minimumSize: const Size.fromHeight(52),
+                    ),
+                  ),
                 ),
-              ),
+              ]),
             ),
             const AppBottomNavBar(currentTab: AppBottomTab.catalog),
           ],
