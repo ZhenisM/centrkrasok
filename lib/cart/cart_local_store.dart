@@ -18,10 +18,14 @@ import 'package:centrkrasok/cart/models/cart_model.dart';
 class CartBadge {
   CartBadge._();
   static final ValueNotifier<int> count = ValueNotifier<int>(0);
+  /// Меняется при любом изменении корзин (в т.ч. смене текущей) — главный
+  /// экран и профиль перечитывают «Текущего клиента».
+  static final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
   static Future<void> refresh() async {
     try {
       final current = await CartLocalStore.loadCurrent();
+      revision.value++;
       count.value = current == null
           ? 0
           : current.items.fold<double>(0, (sum, i) => sum + i.quantity).round();

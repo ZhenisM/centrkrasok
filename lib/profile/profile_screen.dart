@@ -24,7 +24,10 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   String _managerName = '';
-  Customer? _activeCustomer;
+  /// Клиент ТЕКУЩЕЙ корзины — тот же, что в «Кабинете клиента»
+  /// (раньше брался отдельно сохранённый «активный» клиент, который не
+  /// менялся при переключении корзины).
+  String? _currentClientName;
 
   @override
   void initState() {
@@ -36,10 +39,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final prefs = await SharedPreferences.getInstance();
     final name = prefs.getString('user_name') ?? '';
     final customer = await CustomerStorage.loadActive();
+    final cart = await CartLocalStore.loadCurrent();
+    final info = cart?.clientInfo;
+    String? clientName;
+    if (info != null) {
+      clientName = (info['ENTITY'] == 'COMPANY' ? info['TITLE'] : info['NAME'])?.toString();
+    }
+    clientName ??= cart?.title;
     if (!mounted) return;
     setState(() {
       _managerName = name;
-      _activeCustomer = customer;
+      _currentClientName = (clientName != null && clientName.trim().isNotEmpty) ? clientName : customer?.name;
     });
   }
 
@@ -53,7 +63,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           content: Text('Нет клиента — выберите его через «Анкету лида» или «Существующий клиент»')));
       return;
     }
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientCabinetScreen(basketId: cart.id)));
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientCabinetScreen(basketId: cart.id)));
   }
 
   Future<void> _logout() async {
@@ -96,11 +106,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 4),
               Text(_managerName.isEmpty ? '—' : _managerName,
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-              if (_activeCustomer != null) ...[
+              if (_currentClientName != null) ...[
                 const SizedBox(height: 16),
                 Text('Текущий клиент', style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
                 const SizedBox(height: 4),
-                Text(_activeCustomer!.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                Text(_currentClientName!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
               ],
             ]),
           ),
@@ -118,7 +128,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _MenuItem(
                 icon: Icons.badge_outlined,
                 label: 'Кабинет клиента',
-                onTap: _openClientCabinet,
+                onTap: () async { await _openClientCabinet(); _load(); },
               ),
               const Divider(height: 1, indent: 56),
               _MenuItem(

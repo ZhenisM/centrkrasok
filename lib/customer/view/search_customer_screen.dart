@@ -6,18 +6,23 @@ import 'package:centrkrasok/cart/cart_api_service.dart';
 import 'package:centrkrasok/cart/cart_local_store.dart';
 import 'package:centrkrasok/cart/models/cart_model.dart';
 
-enum _SearchEntity { contact, company }
+
+/// Поиск существующего клиента — ОТДЕЛЬНО для контактов («Поиск
+/// клиента», по телефону) и для компаний («Поиск компании»), как две
+/// страницы сайта /client/search/contact/ и /client/search/company/.
+enum CustomerSearchMode { contact, company }
 
 class SearchCustomerScreen extends StatefulWidget {
-  const SearchCustomerScreen({super.key});
+  const SearchCustomerScreen({super.key, this.mode = CustomerSearchMode.contact, this.initialPhone});
+  final CustomerSearchMode mode;
+  /// Номер для автопоиска (переход из «Нового лида» при дубле).
+  final String? initialPhone;
 
   @override
   State<SearchCustomerScreen> createState() => _SearchCustomerScreenState();
 }
 
 class _SearchCustomerScreenState extends State<SearchCustomerScreen> {
-  _SearchEntity _entity = _SearchEntity.contact;
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -26,9 +31,9 @@ class _SearchCustomerScreenState extends State<SearchCustomerScreen> {
         backgroundColor: const Color(0xFF4CAF50),
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text(
-          'Существующий клиент',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        title: Text(
+          widget.mode == CustomerSearchMode.company ? 'Поиск компании' : 'Поиск клиента',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
         actions: [
           SizedBox(
@@ -59,28 +64,10 @@ class _SearchCustomerScreenState extends State<SearchCustomerScreen> {
       ),
       body: Column(
         children: [
-          // Переключатель Контакты / Компания
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Row(children: [
-              Expanded(child: _Tab(
-                label: 'Контакты',
-                selected: _entity == _SearchEntity.contact,
-                onTap: () => setState(() => _entity = _SearchEntity.contact),
-              )),
-              const SizedBox(width: 8),
-              Expanded(child: _Tab(
-                label: 'Компания',
-                selected: _entity == _SearchEntity.company,
-                onTap: () => setState(() => _entity = _SearchEntity.company),
-              )),
-            ]),
-          ),
           const SizedBox(height: 8),
           Expanded(
-            child: _entity == _SearchEntity.contact
-                ? const _ContactSearchView()
+            child: widget.mode == CustomerSearchMode.contact
+                ? _ContactSearchView(initialPhone: widget.initialPhone)
                 : const _CompanySearchView(),
           ),
         ],
@@ -90,43 +77,9 @@ class _SearchCustomerScreenState extends State<SearchCustomerScreen> {
 }
 
 // -------------------------------------------------------
-// Таб переключатель
-// -------------------------------------------------------
-class _Tab extends StatelessWidget {
-  const _Tab({required this.label, required this.selected, required this.onTap});
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFF4CAF50) : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-            color: selected ? Colors.white : Colors.black54,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// -------------------------------------------------------
-// Поиск контакта
-// -------------------------------------------------------
 class _ContactSearchView extends StatefulWidget {
-  const _ContactSearchView();
+  const _ContactSearchView({this.initialPhone});
+  final String? initialPhone;
   @override
   State<_ContactSearchView> createState() => _ContactSearchViewState();
 }
@@ -139,6 +92,16 @@ class _ContactSearchViewState extends State<_ContactSearchView> {
   bool _loading = false;
   String? _error;
   List<CustomerSearchResult>? _results;
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.initialPhone;
+    if (p != null && p.isNotEmpty) {
+      _phoneCtrl.text = p;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _search());
+    }
+  }
 
   @override
   void dispose() {

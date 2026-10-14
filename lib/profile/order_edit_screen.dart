@@ -1,228 +1,111 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:centrkrasok/profile/profile_api.dart';
 
-/// Экран редактирования заказа через Bitrix-админку на prons.kz — как
-/// «Изменить» в «Заказах клиента» сайта (/client/order/ — та же страница
-/// sale_order_edit.php во фрейме). Перенесено из offlinesvet.
-/// Открывает /bitrix/admin/sale_order_edit.php в WebView с куками сессии.
+/// Редактирование заказа — та же страница Bitrix (sale_order_edit.php),
+/// что «Изменить» в «Заказах клиента» сайта.
+///
+/// Вход: сервер выдаёт одноразовую ссылку (profile.php → edit_link),
+/// по которой WebView САМ авторизуется на prons.kz. Раньше в WebView
+/// подкладывались куки сессии из приложения — сайт видел две сессии
+/// и показывал форму авторизации по кругу.
 class OrderEditScreen extends StatefulWidget {
   final int orderId;
   final String orderNumber;
-
-  const OrderEditScreen({
-    super.key,
-    required this.orderId,
-    required this.orderNumber,
-  });
+  const OrderEditScreen({super.key, required this.orderId, required this.orderNumber});
 
   @override
   State<OrderEditScreen> createState() => _OrderEditScreenState();
 }
 
 class _OrderEditScreenState extends State<OrderEditScreen> {
-  late final WebViewController _controller;
+  WebViewController? _controller;
   bool _loading = true;
-  bool _cookiesReady = false;
-  bool _editLoaded = false; // редактор уже был загружен
-  static bool _cookiesInitialized = false; // куки уже установлены (между сессиями)
+  bool _editLoaded = false;
   String? _error;
 
-  static const _baseHost = 'prons.kz';
-  static const _editPath = '/bitrix/admin/sale_order_edit.php';
-
-  String get _editUrl =>
-      'https://$_baseHost$_editPath?ID=${widget.orderId}&lang=ru&IFRAME=Y';
+  static const _host = 'prons.kz';
 
   @override
   void initState() {
     super.initState();
-    _initWebView();
+    _open();
   }
 
-  Future<void> _initWebView() async {
-    // 1. Получаем сохранённые куки сессии
-    final prefs = await SharedPreferences.getInstance();
-    final rawCookies = prefs.getString('session_cookies') ?? '';
-
-    // 2. Парсим куки: "PHPSESSID=abc; path=/; BITRIX_SM_LOGIN=user; ..."
-    final cookies = _parseCookies(rawCookies);
-    if (cookies.isEmpty) {
-      setState(() {
-        _error = 'Сессия не найдена. Войдите в приложение заново.';
-        _loading = false;
-      });
-      return;
+  Future<void> _open() async {
+    setState(() { _error = null; _loading = true; });
+    try {
+      // Чистые куки — чтобы старые сессии не мешали входу.
+      await WebViewCookieManager().clearCookies();
+      final r = await ProfileApi().call('edit_link', {'order_id': '${widget.orderId}'});
+      final url = r['url'].toString();
+      final c = _controller ?? _createController();
+      _controller = c;
+      await c.loadRequest(Uri.parse(url));
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString().replaceFirst('Exception: ', ''); _loading = false; });
     }
+  }
 
-    // 3. Инициализируем WebView
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(NavigationDelegate(
-        onPageStarted: (_) => setState(() => _loading = true),
-        onPageFinished: (url) {
-          setState(() => _loading = false);
-          if (url.contains('/bitrix/admin/sale_order_edit.php')) {
-            _editLoaded = true;
-          }
-          // Скрываем лишние элементы Bitrix-админки (шапка, меню)
-          _controller.runJavaScript('''
-            // Скрываем верхнее меню и левую панель Bitrix
-            var header = document.getElementById('header');
-            if (header) header.style.display = 'none';
-            var leftPanel = document.getElementById('bx-panel');
-            if (leftPanel) leftPanel.style.display = 'none';
-            var workzone = document.getElementById('workarea-content');
-            if (workzone) workzone.style.marginLeft = '0';
-            // Кнопка "Список" в Bitrix-админке — скрываем
-            var btnList = document.getElementById('btn_list');
-            if (btnList) btnList.style.display = 'none';
+  WebViewController _createController() => WebViewController()
+    ..setJavaScriptMode(JavaScriptMode.unrestricted)
+    ..setNavigationDelegate(NavigationDelegate(
+      onPageStarted: (_) { if (mounted) setState(() => _loading = true); },
+      onPageFinished: (url) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        if (url.contains('/bitrix/admin/sale_order_edit.php') || url.contains('/bitrix/admin/sale_order_shipment_edit.php')) {
+          _editLoaded = true;
+          // Как на сайте: прячем кнопку «Список» и шапку админки.
+          _controller?.runJavaScript('''
+            ['btn_list','bx-panel','header'].forEach(function(id){var e=document.getElementById(id); if(e) e.style.display='none';});
           ''');
-        },
-        // onWebResourceError убран — мелкие ошибки ресурсов не должны закрывать экран
-
-        onNavigationRequest: (request) {
-          final uri = Uri.tryParse(request.url);
-          if (uri == null) return NavigationDecision.prevent;
-
-          // Разрешаем всю навигацию на prons.kz
-          final isAllowed = uri.host == _baseHost;
-
-          if (!isAllowed) {
-            // Закрываем только если редактор уже был открыт
-            // (не на этапе загрузки prons.kz для инициализации кук)
-            if (_editLoaded && mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Заказ сохранён')));
-              Navigator.of(context).pop(true);
-            }
-            return NavigationDecision.prevent;
-          }
-          return NavigationDecision.navigate;
-        },
-      ));
-
-    // 4. Прокидываем куки через WebView cookie manager
-    final cookieManager = WebViewCookieManager();
-    for (final cookie in cookies) {
-      final name  = cookie['name']!;
-      final value = cookie['value']!;
-      // Пропускаем удалённые куки
-      if (value == 'deleted') continue;
-      // BITRIX_SM_* устанавливаем с точкой в домене
-      final domain = name.startsWith('BITRIX_SM_') ? '.$_baseHost' : _baseHost;
-      await cookieManager.setCookie(WebViewCookie(
-        name:   name,
-        value:  Uri.decodeComponent(value), // декодируем %20, %3A и т.д.
-        domain: domain,
-        path:   '/',
-      ));
-    }
-
-    setState(() => _cookiesReady = true);
-
-    // Всегда устанавливаем куки (новый WebView контроллер каждый раз)
-    for (final cookie in cookies) {
-      final name  = cookie['name']!;
-      final value = cookie['value']!;
-      if (value == 'deleted') continue;
-      final domain = name.startsWith('BITRIX_SM_') ? '.$_baseHost' : _baseHost;
-      await cookieManager.setCookie(WebViewCookie(
-        name:   name,
-        value:  Uri.decodeComponent(value),
-        domain: domain,
-        path:   '/',
-      ));
-    }
-
-    if (!_cookiesInitialized) {
-      // Первый раз — загружаем prons.kz чтобы WebView инициализировал контекст домена
-      // и куки стали доступны для последующих запросов
-      await _controller.loadRequest(Uri.parse('https://$_baseHost/'));
-      await Future.delayed(const Duration(milliseconds: 800));
-      _cookiesInitialized = true;
-    }
-    
-    // Переходим на редактор
-    await _controller.loadRequest(Uri.parse(_editUrl));
-  }
-
-  /// Парсит строку Set-Cookie заголовка в список {name, value}
-  List<Map<String, String>> _parseCookies(String raw) {
-    final result = <Map<String, String>>[];
-    // Set-Cookie может содержать несколько кук через запятую или \n
-    final parts = raw.split(RegExp(r',(?=[^;]+=[^;]+)'));
-    for (final part in parts) {
-      final nameValue = part.trim().split(';').first.trim();
-      final eqIdx = nameValue.indexOf('=');
-      if (eqIdx > 0) {
-        final name  = nameValue.substring(0, eqIdx).trim();
-        final value = nameValue.substring(eqIdx + 1).trim();
-        if (name.isNotEmpty && value.isNotEmpty) {
-          result.add({'name': name, 'value': value});
         }
-      }
-    }
-    return result;
-  }
+      },
+      onNavigationRequest: (request) {
+        final uri = Uri.tryParse(request.url);
+        if (uri == null) return NavigationDecision.prevent;
+        final inEditor = uri.path.contains('/bitrix/admin/sale_order_edit.php') ||
+            uri.path.contains('/bitrix/admin/sale_order_shipment_edit.php') ||
+            uri.path.contains('/ajax/centrkrasok/order_edit_login.php') ||
+            uri.path.startsWith('/bitrix/') ;
+        if (uri.host == _host && inEditor) return NavigationDecision.navigate;
+        // Ушли со страницы редактирования (сохранили и т.п.) — закрываем экран.
+        if (_editLoaded && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Заказ сохранён')));
+          Navigator.of(context).pop(true);
+        }
+        return NavigationDecision.prevent;
+      },
+    ));
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(false),
-        ),
+        backgroundColor: const Color(0xFF4CAF50),
+        foregroundColor: Colors.white,
+        leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.of(context).pop(_editLoaded)),
         title: Text('Заказ #${widget.orderNumber}'),
-        centerTitle: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _cookiesReady
-                ? () => _controller.loadRequest(Uri.parse(_editUrl))
-                : null,
-          ),
-        ],
+        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _open)],
       ),
-      body: _buildBody(),
+      body: _error != null
+          ? Center(child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 44),
+                const SizedBox(height: 12),
+                Text(_error!, textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                FilledButton(onPressed: _open, child: const Text('Повторить')),
+              ]),
+            ))
+          : Stack(children: [
+              if (_controller != null) WebViewWidget(controller: _controller!),
+              if (_loading) const LinearProgressIndicator(color: Color(0xFF4CAF50), backgroundColor: Color(0xFFE8F5E9)),
+            ]),
     );
-  }
-
-  Widget _buildBody() {
-    if (_error != null) {
-      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.error_outline, color: Colors.red, size: 48),
-        const SizedBox(height: 12),
-        Text(_error!, textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.red)),
-        const SizedBox(height: 16),
-        FilledButton(
-          onPressed: () {
-            setState(() { _error = null; _loading = true; });
-            _initWebView();
-          },
-          child: const Text('Повторить'),
-        ),
-      ]));
-    }
-
-    if (!_cookiesReady) {
-      return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        CircularProgressIndicator(color: Color(0xFF4CAF50)),
-        SizedBox(height: 12),
-        Text('Открываем редактор...'),
-      ]));
-    }
-
-    return Stack(children: [
-      WebViewWidget(controller: _controller),
-      if (_loading)
-        const LinearProgressIndicator(
-          color: Color(0xFF4CAF50),
-          backgroundColor: Color(0xFFE8F5E9),
-        ),
-    ]);
   }
 }

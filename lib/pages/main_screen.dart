@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:centrkrasok/auth/auth_service.dart';
-import 'package:centrkrasok/customer/customer.dart';
 import 'package:centrkrasok/customer/view/new_customer_dialog.dart';
 import 'package:centrkrasok/customer/view/search_customer_screen.dart';
 import 'package:centrkrasok/customer/view/bad_lead_dialog.dart';
+import 'package:centrkrasok/customer/view/potential_project_screen.dart';
+import 'package:centrkrasok/cart/cart_local_store.dart';
 import 'package:centrkrasok/repositories/products/catalog_sync_service.dart';
 
 class MainScreen extends StatefulWidget {
@@ -15,13 +16,13 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  Customer? _activeCustomer;
   bool _loadingCustomer = true;
 
   @override
   void initState() {
     super.initState();
     _loadActiveCustomer();
+    CartBadge.revision.addListener(_onCartsChanged);
     _maybeSyncCatalog();
   }
 
@@ -37,25 +38,49 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  /// «Текущий клиент» — клиент ТЕКУЩЕЙ корзины (как в профиле и кабинете
+  /// клиента); перечитывается при любой смене корзины.
+  Map<String, dynamic>? _cartClient;
+
+  @override
+  void dispose() {
+    CartBadge.revision.removeListener(_onCartsChanged);
+    super.dispose();
+  }
+
   Future<void> _loadActiveCustomer() async {
-    final customer = await CustomerStorage.loadActive();
+    final cart = await CartLocalStore.loadCurrent();
     if (!mounted) return;
     setState(() {
-      _activeCustomer = customer;
+      _cartClient = cart?.clientInfo == null
+          ? (cart == null ? null : {'NAME': cart.title})
+          : Map<String, dynamic>.from(cart!.clientInfo!);
       _loadingCustomer = false;
     });
   }
 
+  void _onCartsChanged() => _loadActiveCustomer();
+
   Future<void> _openNewCustomer() async {
-    final selected = await showNewCustomerDialog(context);
-    if (selected == true) {
+    final result = await showNewCustomerDialog(context);
+    if (result == true) {
       _loadActiveCustomer();
+    } else if (result is String && mounted) {
+      // Такой контакт уже есть — «Поиск клиента» с этим номером.
+      final selected = await Navigator.of(context).push<bool>(MaterialPageRoute(
+        builder: (_) => SearchCustomerScreen(mode: CustomerSearchMode.contact, initialPhone: result),
+      ));
+      if (selected == true) _loadActiveCustomer();
     }
+  }
+
+  Future<void> _openPotentialProject() async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PotentialProjectScreen()));
   }
 
   Future<void> _openSearchCustomer() async {
     final selected = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const SearchCustomerScreen()),
+      MaterialPageRoute(builder: (_) => const SearchCustomerScreen(mode: CustomerSearchMode.company)),
     );
     if (selected == true) {
       _loadActiveCustomer();
@@ -149,7 +174,7 @@ class _MainScreenState extends State<MainScreen> {
                 onPressed: _openNewCustomer,
                 icon: const Icon(Icons.person_add_outlined),
                 label: const Text(
-                  'Анкета лида',
+                  'Новый лид',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
                 style: FilledButton.styleFrom(
@@ -163,14 +188,14 @@ class _MainScreenState extends State<MainScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Существующий клиент — белая без бордера
+            // Поиск компании — белая без бордера (как на сайте «Поиск Компании»)
             SizedBox(
               height: 52,
               child: FilledButton.icon(
                 onPressed: _openSearchCustomer,
-                icon: const Icon(Icons.search),
+                icon: const Icon(Icons.business_outlined),
                 label: const Text(
-                  'Существующий клиент',
+                  'Поиск компании',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
                 style: FilledButton.styleFrom(
@@ -206,6 +231,28 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+
+            // Потенциальный проект — форма Битрикс24, как на сайте
+            SizedBox(
+              height: 52,
+              child: FilledButton.icon(
+                onPressed: _openPotentialProject,
+                icon: const Icon(Icons.architecture_outlined),
+                label: const Text(
+                  'Потенциальный проект',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF26529A),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -230,7 +277,8 @@ class _MainScreenState extends State<MainScreen> {
       );
     }
 
-    if (_activeCustomer == null) {
+    final c = _cartClient;
+    if (c == null) {
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -244,10 +292,11 @@ class _MainScreenState extends State<MainScreen> {
       );
     }
 
-    final customer = _activeCustomer!;
-    final subtitle = customer.isCompany
-        ? customer.bin
-        : '${customer.phone} · ${customer.type.label}';
+    final isCompany = c['ENTITY'] == 'COMPANY';
+    final name = '${(isCompany ? c['TITLE'] : c['NAME']) ?? ''}';
+    final subtitle = isCompany
+        ? '${c['BIN'] ?? c['IIN'] ?? ''}'
+        : [c['PHONE'], c['TYPE']].where((e) => e != null && '$e'.isNotEmpty).join(' · ');
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -260,7 +309,7 @@ class _MainScreenState extends State<MainScreen> {
           CircleAvatar(
             backgroundColor: const Color(0xFFE8F5E9),
             child: Icon(
-              customer.isCompany ? Icons.business_outlined : Icons.person,
+              isCompany ? Icons.business_outlined : Icons.person,
               color: const Color(0xFF4CAF50),
             ),
           ),
@@ -270,17 +319,17 @@ class _MainScreenState extends State<MainScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  customer.isCompany ? 'Текущая компания' : 'Текущий клиент',
+                  isCompany ? 'Текущая компания' : 'Текущий клиент',
                   style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
                 ),
                 Text(
-                  customer.fullName,
+                  name,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 16,
                   ),
                 ),
-                if (subtitle != null && subtitle.isNotEmpty)
+                if (subtitle.isNotEmpty)
                   Text(
                     subtitle,
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 13),

@@ -6,8 +6,11 @@ import 'package:centrkrasok/cart/cart_api_service.dart';
 import 'package:centrkrasok/cart/cart_local_store.dart';
 import 'package:centrkrasok/cart/models/cart_model.dart';
 
-Future<bool?> showNewCustomerDialog(BuildContext context) {
-  return showModalBottomSheet<bool>(
+/// Результат: true — лид создан; String — номер телефона: такой контакт
+/// уже есть в Bitrix24, нужно открыть «Поиск клиента» с этим номером
+/// (как на сайте: предупреждение → страница поиска существующего клиента).
+Future<Object?> showNewCustomerDialog(BuildContext context) {
+  return showModalBottomSheet<Object>(
     context: context,
     isScrollControlled: true,
     backgroundColor: const Color(0xFFF3F2F7),
@@ -60,7 +63,24 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
     try {
       final matches = await _bitrixService.searchContactsByPhone(phone);
       if (matches.isNotEmpty) {
-        setState(() { _existingMatches = matches; _loading = false; });
+        setState(() => _loading = false);
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Клиент уже существует'),
+            content: const Text('Контакт с таким номером телефона есть в Битрикс24. '
+                'Вы будете перенаправлены на страницу поиска существующего клиента.'),
+            actions: [
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF4CAF50)),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        if (mounted) Navigator.of(context).pop(phone);
         return;
       }
 
