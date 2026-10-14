@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:centrkrasok/auth/auth_service.dart';
 import 'package:centrkrasok/customer/customer.dart';
 import 'package:centrkrasok/customer/view/new_customer_dialog.dart';
@@ -205,28 +206,17 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-
-            // Профиль — внутри ссылка на каталог
-            SizedBox(
-              height: 52,
-              child: OutlinedButton.icon(
-                onPressed: _openProfile,
-                icon: const Icon(Icons.person_outline),
-                label: const Text(
-                  'Профиль',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.black87,
-                  side: BorderSide(color: Colors.grey.shade300),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ),
           ],
+        ),
+      ),
+      // Профиль — красная кнопка с иконкой в правом нижнем углу, как в offlinesvet.
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFFE53935),
+        onPressed: _openProfile,
+        child: SvgPicture.asset(
+          'assets/icons/document.svg',
+          width: 24, height: 24,
+          colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
         ),
       ),
     );

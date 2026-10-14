@@ -5,11 +5,16 @@ import 'package:centrkrasok/auth/auth_service.dart';
 import 'package:centrkrasok/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:centrkrasok/customer/customer.dart';
 import 'package:centrkrasok/customer/customer_storage.dart';
+import 'package:centrkrasok/cart/cart_local_store.dart';
+import 'package:centrkrasok/cart/view/tint_list_screen.dart';
+import 'package:centrkrasok/profile/calculator_screen.dart';
+import 'package:centrkrasok/profile/client_cabinet_screen.dart';
+import 'package:centrkrasok/profile/manager_stats_screen.dart';
 
-/// Упрощённая версия профиля на этом этапе — кабинет клиента и
-/// статистика менеджера пока не перенесены (см. обсуждение: они
-/// завязаны на ID свойств заказа, которые для centrkrasok ещё нужно
-/// сверить отдельно, чтобы не гадать вслепую).
+/// Профиль — как боковое меню сайта offline.centr-krasok.kz:
+/// менеджер, «Мои успехи», текущий клиент, «Кабинет клиента», «Мои
+/// колеровки», «Калькулятор», каталог, выход. («Кофейня» и «Склад» —
+/// позже.)
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -36,6 +41,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _managerName = name;
       _activeCustomer = customer;
     });
+  }
+
+  /// Кабинет клиента — для клиента текущей корзины (как на сайте —
+  /// для текущего клиента).
+  Future<void> _openClientCabinet() async {
+    final cart = await CartLocalStore.loadCurrent();
+    if (!mounted) return;
+    if (cart == null || cart.clientInfo == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Нет клиента — выберите его через «Анкету лида» или «Существующий клиент»')));
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientCabinetScreen(basketId: cart.id)));
   }
 
   Future<void> _logout() async {
@@ -88,15 +106,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Разделы (как в offlinesvet). Пока только каталог — "Мои успехи"
-          // и "Кабинет клиента" для красок ещё не перенесены.
           Container(
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
-            child: _MenuItem(
-              svgAsset: 'assets/icons/shop.svg',
-              label: 'Каталог',
-              onTap: () => Navigator.of(context).pushNamed('/products-list'),
-            ),
+            child: Column(children: [
+              _MenuItem(
+                icon: Icons.emoji_events_outlined,
+                label: 'Мои успехи',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ManagerStatsScreen())),
+              ),
+              const Divider(height: 1, indent: 56),
+              _MenuItem(
+                icon: Icons.badge_outlined,
+                label: 'Кабинет клиента',
+                onTap: _openClientCabinet,
+              ),
+              const Divider(height: 1, indent: 56),
+              _MenuItem(
+                icon: Icons.water_drop_outlined,
+                label: 'Мои колеровки',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TintListScreen())),
+              ),
+              const Divider(height: 1, indent: 56),
+              _MenuItem(
+                icon: Icons.calculate_outlined,
+                label: 'Калькулятор',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CalculatorScreen())),
+              ),
+              const Divider(height: 1, indent: 56),
+              _MenuItem(
+                svgAsset: 'assets/icons/shop.svg',
+                label: 'Каталог',
+                onTap: () => Navigator.of(context).pushNamed('/products-list'),
+              ),
+            ]),
           ),
           const SizedBox(height: 24),
           SizedBox(
@@ -115,8 +157,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 }
 
 class _MenuItem extends StatelessWidget {
-  const _MenuItem({required this.svgAsset, required this.label, required this.onTap});
-  final String svgAsset;
+  const _MenuItem({this.svgAsset, this.icon, required this.label, required this.onTap});
+  final String? svgAsset;
+  final IconData? icon;
   final String label;
   final VoidCallback onTap;
 
@@ -128,8 +171,11 @@ class _MenuItem extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(children: [
-          SvgPicture.asset(svgAsset, width: 24, height: 24,
-              colorFilter: const ColorFilter.mode(Color(0xFF4CAF50), BlendMode.srcIn)),
+          if (svgAsset != null)
+            SvgPicture.asset(svgAsset!, width: 24, height: 24,
+                colorFilter: const ColorFilter.mode(Color(0xFF4CAF50), BlendMode.srcIn))
+          else
+            Icon(icon, size: 24, color: const Color(0xFF4CAF50)),
           const SizedBox(width: 16),
           Expanded(
             child: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
