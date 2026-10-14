@@ -17,12 +17,15 @@ class CategoryScreen extends StatefulWidget {
   final Section section;
   final List<Product> allProducts;
   final List<Section> allSections;
+  /// Блок над фильтрами — на корне каталога это «Каталог по брендам».
+  final Widget? header;
 
   const CategoryScreen({
     super.key,
     required this.section,
     required this.allProducts,
     required this.allSections,
+    this.header,
   });
 
   @override
@@ -62,7 +65,16 @@ class _CategoryScreenState extends State<CategoryScreen> {
     super.dispose();
   }
 
+  // Кнопка «наверх» — как в offlinesvet: появляется после прокрутки вниз.
+  bool _showScrollToTop = false;
+  static const double _scrollToTopThreshold = 400;
+
+  Future<void> _scrollToTop() => _scrollController.animateTo(0,
+      duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic);
+
   void _onScroll() {
+    final shouldShow = _scrollController.position.pixels > _scrollToTopThreshold;
+    if (shouldShow != _showScrollToTop) setState(() => _showScrollToTop = shouldShow);
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 300) {
       _loadProducts();
@@ -131,9 +143,11 @@ class _CategoryScreenState extends State<CategoryScreen> {
           ),
         ],
       ),
-      body: CustomScrollView(
+      body: Stack(children: [
+        CustomScrollView(
         controller: _scrollController,
         slivers: [
+          if (widget.header != null) SliverToBoxAdapter(child: widget.header!),
           // Плашка фильтров
           SliverToBoxAdapter(
             child: Container(
@@ -236,19 +250,6 @@ class _CategoryScreenState extends State<CategoryScreen> {
             const SliverToBoxAdapter(child: Divider()),
           ],
 
-          // Заголовок товаров
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Text(
-                '${_products.length}${_hasMore ? '+' : ''} товар${_suffix(_products.length)}',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey.shade600,
-                ),
-              ),
-            ),
-          ),
-
           // Сетка товаров
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -271,6 +272,35 @@ class _CategoryScreenState extends State<CategoryScreen> {
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
         ],
       ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 16,
+          child: Center(
+            child: AnimatedOpacity(
+              opacity: _showScrollToTop ? 1 : 0,
+              duration: const Duration(milliseconds: 250),
+              child: IgnorePointer(
+                ignoring: !_showScrollToTop,
+                child: Material(
+                  color: Colors.transparent,
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: _scrollToTop,
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black.withValues(alpha: 0.55)),
+                      child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 24),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ]),
       bottomNavigationBar: const AppBottomNavBar(currentTab: AppBottomTab.catalog),
     );
   }
@@ -420,14 +450,5 @@ class _CategoryScreenState extends State<CategoryScreen> {
       );
     }
     return const SizedBox.shrink();
-  }
-
-  String _suffix(int n) {
-    final l = n % 10;
-    final l2 = n % 100;
-    if (l2 >= 11 && l2 <= 14) return 'ов';
-    if (l == 1) return '';
-    if (l >= 2 && l <= 4) return 'а';
-    return 'ов';
   }
 }

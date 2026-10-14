@@ -177,6 +177,10 @@ class ProductsRepository {
     int? limit,
     int? offset,
   }) async {
+    // Корень каталога (section_id = 0) — все товары из кэша.
+    if (sectionId == 0) {
+      return LocalDb.loadAllProducts(limit: limit, offset: offset);
+    }
     final sectionIds = (section != null && section.children.isNotEmpty)
         ? _collectSectionIds(section)
         : [sectionId.toString()];

@@ -297,6 +297,12 @@ class LocalDb {
     return rows.map(_productFromRow).toList();
   }
 
+  // Все товары каталога порциями — корень каталога без интернета.
+  static Future<List<Product>> loadAllProducts({int? limit, int? offset}) async {
+    final rows = await _database.query('products', orderBy: 'id ASC', limit: limit, offset: offset);
+    return rows.map(_productFromRow).toList();
+  }
+
   // Для случаев, когда реально нужны ВСЕ товары раздела целиком (построение
   // фильтров, офлайн-фильтрация) — читаем порциями по [batchSize], а не
   // одним огромным запросом, чтобы не повторить тот же OutOfMemoryError.
