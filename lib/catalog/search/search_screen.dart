@@ -7,6 +7,7 @@ import 'package:centrkrasok/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:centrkrasok/repositories/products/models/product.dart';
 import 'package:centrkrasok/repositories/products/local_db.dart';
 import 'package:centrkrasok/catalog/product_list/widgets/product_tile.dart';
+import 'package:centrkrasok/common/catalog_grid.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key, this.initialQuery = ''});
@@ -179,7 +180,7 @@ class _SearchScreenState extends State<SearchScreen> {
     return GridView.builder(
       padding: const EdgeInsets.all(12),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: MediaQuery.of(context).size.width >= 576 ? 3 : 2,
+        crossAxisCount: catalogColumns(context),
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
         childAspectRatio: 0.62,

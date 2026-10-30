@@ -4,6 +4,7 @@ import 'package:centrkrasok/catalog/product_list/widgets/product_tile.dart';
 import 'package:centrkrasok/common/animated_search_bar.dart';
 import 'package:centrkrasok/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:centrkrasok/repositories/products/models/product.dart';
+import 'package:centrkrasok/common/catalog_grid.dart';
 
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
@@ -117,8 +118,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         Expanded(
           child: GridView.builder(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: catalogColumns(context),
               childAspectRatio: 0.62,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,

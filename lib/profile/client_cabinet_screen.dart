@@ -127,20 +127,30 @@ class _ClientCabinetScreenState extends State<ClientCabinetScreen> {
                 Container(width: 10, height: 10, margin: const EdgeInsets.only(right: 8),
                     decoration: BoxDecoration(color: _hex('${s['color']}'), shape: BoxShape.circle)),
                 Expanded(child: Text('${s['name']}', style: const TextStyle(fontSize: 13))),
-                SizedBox(width: 36, child: Text('${s['total']}', textAlign: TextAlign.center)),
-                SizedBox(width: 100, child: Text('${fmtMoney(s['price'] as num)} ₸', textAlign: TextAlign.right,
-                    style: const TextStyle(fontWeight: FontWeight.w600))),
+                SizedBox(width: 34, child: Text('${s['total']}', textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13))),
+                SizedBox(width: 118, child: _money(s['price'] as num, bold: false)),
               ]),
             )),
         const Divider(),
         Row(children: [
-          const Expanded(child: Text('Итого', style: TextStyle(fontWeight: FontWeight.w700))),
-          SizedBox(width: 36, child: Text('${o['total']}', textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.w700))),
-          SizedBox(width: 100, child: Text('${fmtMoney(o['price'] as num)} ₸', textAlign: TextAlign.right,
-              style: const TextStyle(fontWeight: FontWeight.w700))),
+          const Expanded(child: Text('Итого', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700))),
+          SizedBox(width: 34, child: Text('${o['total']}', textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700))),
+          SizedBox(width: 118, child: _money(o['price'] as num, bold: true)),
         ]),
       ]);
+
+  /// Сумма в одну строку вместе со знаком ₸. Если число не помещается
+  /// в колонку, шрифт уменьшается, а не переносится на вторую строку.
+  Widget _money(num v, {required bool bold}) => FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerRight,
+        child: Text('${fmtMoney(v)} ₸',
+            maxLines: 1,
+            softWrap: false,
+            style: TextStyle(fontSize: bold ? 14 : 13, fontWeight: bold ? FontWeight.w700 : FontWeight.w600)),
+      );
 
   /// «Все заказы клиента» — отдельный экран, как в offlinesvet.
   Widget _ordersList() {

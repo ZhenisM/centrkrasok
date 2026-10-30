@@ -12,6 +12,7 @@ import 'package:centrkrasok/repositories/products/products.dart';
 import 'package:centrkrasok/cart/view/add_to_cart_sheet.dart';
 import 'package:centrkrasok/cart/view/product_tint_sheet.dart';
 import 'package:centrkrasok/catalog/product_list/widgets/product_tile.dart';
+import 'package:centrkrasok/common/catalog_grid.dart';
 
 class ProductItemScreen extends StatefulWidget {
   const ProductItemScreen({super.key});
@@ -603,7 +604,7 @@ class _BaseExpansionTileState extends State<_BaseExpansionTile> {
 
   @override
   Widget build(BuildContext context) {
-    final columns = MediaQuery.of(context).size.width >= 576 ? 3 : 2;
+    final columns = catalogColumns(context);
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,

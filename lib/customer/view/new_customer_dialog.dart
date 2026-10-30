@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:centrkrasok/bitrix/bitrix_service.dart';
 import 'package:centrkrasok/customer/customer.dart';
 import 'package:centrkrasok/cart/cart_api_service.dart';
 import 'package:centrkrasok/cart/cart_local_store.dart';
 import 'package:centrkrasok/cart/models/cart_model.dart';
+import 'package:centrkrasok/common/kz_phone.dart';
 
 /// Результат: true — лид создан; String — номер телефона: такой контакт
 /// уже есть в Bitrix24, нужно открыть «Поиск клиента» с этим номером
@@ -44,8 +48,73 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
 
   List<CustomerSearchResult>? _existingMatches;
 
+  // Проверка номера сразу после ввода, без нажатия «Создать».
+  Timer? _phoneDebounce;
+  String? _checkedPhone;   // номер, который уже проверили (чтобы не спрашивать дважды)
+  bool _checkingPhone = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _phoneController.addListener(_onPhoneChanged);
+  }
+
+  void _onPhoneChanged() {
+    _phoneDebounce?.cancel();
+    final text = _phoneController.text;
+    if (!KzPhone.isComplete(text)) {
+      if (_checkingPhone) setState(() => _checkingPhone = false);
+      return;
+    }
+    final phone = KzPhone.e164(text);
+    if (phone == _checkedPhone) return;
+    _phoneDebounce = Timer(const Duration(milliseconds: 300), () => _checkPhone(phone));
+  }
+
+  /// Номер введён полностью — ищем контакт в Bitrix24. Нашёлся: предупреждаем
+  /// и сразу открываем «Поиск клиента» с этим номером, имя вводить не нужно.
+  Future<void> _checkPhone(String phone) async {
+    setState(() => _checkingPhone = true);
+    List<CustomerSearchResult> matches;
+    try {
+      matches = await _bitrixService.searchContactsByPhone(phone);
+    } catch (_) {
+      // Нет сети или Bitrix24 не ответил — проверим ещё раз при «Создать».
+      if (mounted) setState(() => _checkingPhone = false);
+      return;
+    }
+    if (!mounted) return;
+    // Пока искали, номер успели изменить — этот ответ уже не актуален.
+    if (KzPhone.e164(_phoneController.text) != phone) return;
+    _checkedPhone = phone;
+    setState(() => _checkingPhone = false);
+    if (matches.isNotEmpty) await _goToExisting(phone);
+  }
+
+  Future<void> _goToExisting(String phone) async {
+    FocusScope.of(context).unfocus();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Клиент уже существует'),
+        content: const Text('Контакт с таким номером телефона есть в Битрикс24. '
+            'Вы будете перенаправлены на страницу поиска существующего клиента.'),
+        actions: [
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF4CAF50)),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    if (mounted) Navigator.of(context).pop(phone);
+  }
+
   @override
   void dispose() {
+    _phoneDebounce?.cancel();
+    _phoneController.removeListener(_onPhoneChanged);
     _nameController.dispose();
     _phoneController.dispose();
     _commentController.dispose();
@@ -58,29 +127,14 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
     setState(() { _loading = true; _error = null; _existingMatches = null; });
 
     final name  = _nameController.text.trim();
-    final phone = _phoneController.text.trim();
+    final phone = KzPhone.e164(_phoneController.text); // +77770150595
 
     try {
       final matches = await _bitrixService.searchContactsByPhone(phone);
       if (matches.isNotEmpty) {
         setState(() => _loading = false);
         if (!mounted) return;
-        await showDialog<void>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Клиент уже существует'),
-            content: const Text('Контакт с таким номером телефона есть в Битрикс24. '
-                'Вы будете перенаправлены на страницу поиска существующего клиента.'),
-            actions: [
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF4CAF50)),
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        );
-        if (mounted) Navigator.of(context).pop(phone);
+        await _goToExisting(phone);
         return;
       }
 
@@ -220,10 +274,24 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
           // Телефон
           _WhiteInput(
             controller: _phoneController,
-            hint: 'Телефон *',
+            hint: 'Телефон *  ${KzPhone.hint}',
             keyboardType: TextInputType.phone,
-            validator: (v) => (v == null || v.trim().isEmpty) ? 'Укажите телефон' : null,
+            inputFormatters: [KzPhoneInputFormatter()],
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return 'Укажите телефон';
+              if (!KzPhone.isComplete(v)) return 'Введите номер полностью: ${KzPhone.hint}';
+              return null;
+            },
           ),
+          if (_checkingPhone)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 6, 20, 0),
+              child: Row(children: [
+                SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
+                SizedBox(width: 8),
+                Text('Проверяю, есть ли такой клиент…', style: TextStyle(fontSize: 12, color: Colors.black54)),
+              ]),
+            ),
           const SizedBox(height: 16),
 
           // Тип клиента
@@ -419,9 +487,11 @@ class _WhiteInput extends StatelessWidget {
     this.maxLines = 1,
     this.borderRadius = 28.0,
     this.validator,
+    this.inputFormatters,
   });
 
   final TextEditingController controller;
+  final List<TextInputFormatter>? inputFormatters;
   final String hint;
   final TextInputType keyboardType;
   final int maxLines;
@@ -433,6 +503,7 @@ class _WhiteInput extends StatelessWidget {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
       maxLines: maxLines,
       validator: validator,
       decoration: InputDecoration(

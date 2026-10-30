@@ -12,6 +12,7 @@ import 'package:centrkrasok/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:centrkrasok/catalog/compare/compare_screen.dart';
 import 'package:centrkrasok/catalog/widgets/category_thumbnail.dart';
+import 'package:centrkrasok/common/catalog_grid.dart';
 
 class CategoryScreen extends StatefulWidget {
   final Section section;
@@ -255,7 +256,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             sliver: SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: MediaQuery.of(context).size.width >= 576 ? 3 : 2,
+                crossAxisCount: catalogColumns(context),
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
                 childAspectRatio: 0.62,
