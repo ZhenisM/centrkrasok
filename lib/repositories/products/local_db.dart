@@ -227,13 +227,47 @@ class LocalDb {
     // Каждое слово — подстрокой (название + бренд + артикул в search_text),
     // все слова должны совпасть — как онлайн-поиск search_products.php.
     final words = q.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).take(6).toList();
+    // Берём с запасом и ранжируем так же, как search_products.php: иначе
+    // для «bindo 3» слово «3» совпадает подстрокой почти с чем угодно, и
+    // нужный товар не попадал в первые 30.
     final rows = await _database.query(
       'products',
       where: List.filled(words.length, 'search_text LIKE ?').join(' AND '),
       whereArgs: words.map((w) => '%$w%').toList(),
-      limit: limit,
+      limit: 1000,
     );
-    return rows.map(_productFromRow).toList();
+    final ranked = rows.map((r) {
+      final name = (r['name'] as String? ?? '').toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+      final article = (r['article'] as String? ?? '').toLowerCase().trim();
+      return (row: r, name: name, sample: name.contains('пробник'), score: searchScore(name, article, q, words));
+    }).toList()
+      ..sort((a, b) {
+        if (a.sample != b.sample) return a.sample ? 1 : -1; // товары, потом пробники
+        if (a.score != b.score) return b.score.compareTo(a.score);
+        return a.name.compareTo(b.name);
+      });
+    return ranked.take(limit).map((x) => _productFromRow(x.row)).toList();
+  }
+
+  /// Оценка совпадения — те же правила, что в search_products.php:
+  /// точный артикул > фраза целиком в названии > слово отдельным словом
+  /// («3» в «BINDO 3», а не в «BW_30») > просто подстрока.
+  static int searchScore(String name, String article, String query, List<String> words) {
+    final q = query.replaceAll(RegExp(r'\s+'), ' ').trim();
+    var score = 0;
+    if (article.isNotEmpty && article == q) score += 1000;
+    if (name.contains(q)) score += 200;
+    for (final w in words) {
+      final re = RegExp('(^|[^\\p{L}\\p{N}])${RegExp.escape(w)}(\$|[^\\p{L}\\p{N}])', unicode: true);
+      if (re.hasMatch(name)) {
+        score += 40;
+      } else if (article.contains(w)) {
+        score += 10;
+      } else {
+        score += 1;
+      }
+    }
+    return score;
   }
 
   // Удаляет товары, не подтверждённые последним ПОЛНЫМ обходом каталога

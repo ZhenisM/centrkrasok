@@ -12,7 +12,6 @@ import 'package:centrkrasok/repositories/products/products.dart';
 import 'package:centrkrasok/cart/view/add_to_cart_sheet.dart';
 import 'package:centrkrasok/cart/view/product_tint_sheet.dart';
 import 'package:centrkrasok/catalog/product_list/widgets/product_tile.dart';
-import 'package:centrkrasok/common/catalog_grid.dart';
 
 class ProductItemScreen extends StatefulWidget {
   const ProductItemScreen({super.key});
@@ -103,6 +102,11 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
               ((b['ids'] as List?) ?? []).map((e) => e.toString()).toList(),
             )).toList();
         _description = (data['description'] ?? '').toString().trim();
+        // Свежая скидка каталога с сервера: товар мог открыться из кэша или
+        // истории без неё. От неё же считается цена при добавлении в корзину.
+        if (data.containsKey('discount') && product != null) {
+          product = product!.withDiscount(ProductDiscount.fromJson(data['discount']));
+        }
       });
     } catch (e) {
       debugPrint('product_detail: $e');
@@ -263,24 +267,59 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
           // у части товаров в базе попутно заполнены ещё и партнёрские/
           // прайсовые цены (KASPI, АНД и т.п.), которые тут не нужны.
           if (product!.prices.isNotEmpty) ...[
-            ...(() {
-              final retail = product!.prices.where((p) => p.typeId == '30').toList();
-              return retail.isNotEmpty ? retail : product!.prices;
-            })().map(
-                  (price) => Padding(
+            if (product!.discount != null) ...[
+              // Как на сайте: «Скидка 20%», зачёркнутая цена и цена со скидкой.
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD32F2F),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'Скидка ${product!.discount!.label.substring(1)}',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                  ),
+                  Text(
+                    _fmtPrice(product!.discount!.base),
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      decoration: TextDecoration.lineThrough,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Скидка ${_fmtPrice(product!.discount!.base - product!.discount!.price)}',
+                      style: const TextStyle(color: Colors.grey)),
+                  Text(
+                    _fmtPrice(product!.discount!.price),
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20, color: Color(0xFFD32F2F)),
+                  ),
+                ],
+              ),
+            ] else
+              // Цена — подтверждённая розничная группа (30 — «Розничная
+              // ИСПОЛЬЗОВАТЬ»), а не все типы цен подряд (KASPI, АНД и т.п.).
+              Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Цена', style: TextStyle(color: Colors.grey)),
                     Text(
-                      _fmtPrice(price.price),
+                      _fmtPrice(product!.retailPrice),
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
               ),
-            ),
           ],
 
           // 2. Наличие на складах
@@ -604,7 +643,7 @@ class _BaseExpansionTileState extends State<_BaseExpansionTile> {
 
   @override
   Widget build(BuildContext context) {
-    final columns = catalogColumns(context);
+    final columns = MediaQuery.of(context).size.width >= 576 ? 3 : 2;
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,

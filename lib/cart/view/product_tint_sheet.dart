@@ -127,13 +127,14 @@ class _ProductTintSheetState extends State<_ProductTintSheet> {
     }
   }
 
-  double get _price {
-    final prices = widget.product.prices;
-    if (prices.isEmpty) return 0;
-    final retail = prices.where((p) => p.typeId == '30').toList();
-    final source = retail.isNotEmpty ? retail : prices;
-    return source.map((p) => p.price).reduce((a, b) => a < b ? a : b);
-  }
+  // Цена со скидкой каталога (если есть) — как в корзине сайта. До этого
+  // в корзину уходила полная розничная цена с CUSTOM_PRICE=Y, и заказ из
+  // приложения выходил дороже, чем с сайта.
+  double get _price => widget.product.finalPrice;
+
+  /// Цена до скидки — BASE_PRICE позиции (для зачёркнутой цены в корзине
+  /// и как база для купона в cart_save.php).
+  double get _basePrice => widget.product.discount?.base ?? _price;
 
   Future<void> _submit() async {
     final tintName = _manual ? _manualNameCtrl.text.trim() : (_selected?.name ?? '');
@@ -174,6 +175,7 @@ class _ProductTintSheetState extends State<_ProductTintSheet> {
         name: widget.product.name,
         quantity: _quantity.toDouble(),
         price: _price,
+        basePrice: _basePrice,
         customPrice: true,
         props: props,
       ));

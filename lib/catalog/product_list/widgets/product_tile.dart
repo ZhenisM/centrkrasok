@@ -24,15 +24,9 @@ class _ProductTileState extends State<ProductTile> {
 
   int get _productId => int.tryParse(widget.product.id) ?? 0;
 
-  double get _price {
-    if (widget.product.prices.isEmpty) return 0;
-    // Предпочитаем подтверждённую розничную группу (30 — "Розничная
-    // ИСПОЛЬЗОВАТЬ"), если она есть у товара — та же логика, что в
-    // карточке товара и сравнении.
-    final retail = widget.product.prices.where((p) => p.typeId == '30').toList();
-    final source = retail.isNotEmpty ? retail : widget.product.prices;
-    return source.map((p) => p.price).reduce((a, b) => a < b ? a : b);
-  }
+  // Розничная группа 30 («Розничная ИСПОЛЬЗОВАТЬ»); со скидкой каталога,
+  // если она есть — как на сайте.
+  double get _price => widget.product.finalPrice;
 
   String _fmt(double v) {
     final s = v.toStringAsFixed(0).split('');
@@ -128,7 +122,39 @@ class _ProductTileState extends State<ProductTile> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (_price > 0)
+                  if (_price > 0 && widget.product.discount != null)
+                    // Как на сайте: старая цена зачёркнута, новая красная,
+                    // рядом процент скидки.
+                    Wrap(
+                      spacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          _fmt(_price),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFFD32F2F)),
+                        ),
+                        Text(
+                          _fmt(widget.product.discount!.base),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD32F2F),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            widget.product.discount!.label,
+                            style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    )
+                  else if (_price > 0)
                     Text(
                       _fmt(_price),
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
