@@ -30,6 +30,12 @@ jobs:
           channel: stable
           cache: true
 
+      # Новый Flutter по умолчанию подключает плагины через Swift Package Manager,
+      # а ручная подпись (PROVISIONING_PROFILE_SPECIFIER) тогда ломает архив.
+      # Оставляем CocoaPods — как было до перехода на Xcode 27.
+      - name: Use CocoaPods instead of Swift Package Manager
+        run: flutter config --no-enable-swift-package-manager
+
       - name: Flutter Pub Get
         run: flutter pub get
 
