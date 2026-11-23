@@ -16,16 +16,17 @@ env:
 
 jobs:
   build-and-deploy-ios:
-    runs-on: macos-latest
+    # Xcode 27 + iOS 27 SDK (требование Apple с апреля 2027)
+    runs-on: xcode-27
 
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.38.5"
+          # последняя стабильная версия — нужна для сборки в Xcode 27
           channel: stable
           cache: true
 
