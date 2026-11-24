@@ -58,4 +58,4 @@ key.properties
 .vscode/
 
 # Flutter extra
-.flutter-plugins
+.flutter-pluginsandroid/build/
